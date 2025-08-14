@@ -1,114 +1,111 @@
 /*
-	The Great Clown — p5.js
-	Portrait canvas with vertical symmetry, distorted grid/webbing,
-	red/pink circular motifs, central clown-like figure, washes,
-	and paper texture overlay.
+	The Great Clown — fresh build focused on grid with parabolic intersections.
+	- Portrait canvas, vertical symmetry
+	- Grid lines are bands of parallel straight segments
+	- Only intersections are curved (cubic bezier, parabola-like)
+	- Circles kept; NO central yellow bars
+	- Wash + paper texture overlay
 
-	Controls:
-		R – re-randomize
-		S – save image
+	Controls: R randomize · S save
 */
 
 "use strict";
 
-// -----------------------------
-// Adjustable parameters
-// -----------------------------
-const Params = {
+// ---------------------------------
+// Config
+// ---------------------------------
+const Config = {
 	canvasWidth: 800,
 	canvasHeight: 1200,
-	gridColumns: 12,
-	gridRows: 16,
-	noiseScale: 0.015,
-	distortionStrength: 34,
+	cols: 12,
+	rows: 16,
+
+	// Line bands
+	linesPerBorderMin: 2,
+	linesPerBorderMax: 5,
+	lineSpacingMin: 1.1,
+	lineSpacingMax: 2.0,
+	lineWeightMin: 0.8,
+	lineWeightMax: 1.8,
+	lineAlpha: 120,
+
+	// Intersection rounding (parabolic feel)
+	cornerRadiusMinFrac: 0.05, // of min(cellW, cellH)
+	cornerRadiusMaxFrac: 0.22,
+	curveKMin: 0.7, // cubic-bezier handle length factor relative to radius
+	curveKMax: 1.25,
+
+	// Circles
 	circleProbability: 0.26,
 	circleSizeMin: 18,
 	circleSizeMax: 48,
-	symmetryJitter: 3.0, // px offset to make mirroring imperfect
-	washOpacity: 26, // 0–255
-	textureOpacity: 0.22, // 0–1
 
-	// Pebble-grid controls
-	verticalLinesPerBandMin: 3,
-	verticalLinesPerBandMax: 6,
-	horizontalLinesPerBandMin: 2,
-	horizontalLinesPerBandMax: 5,
-	gridBandAlpha: 120,
-	gridLineWeightMin: 0.7,
-	gridLineWeightMax: 1.9,
-	parabolaCurveIntensity: 0.22, // fraction of local cell width/height
-	stepsPerCell: 10
+	// Presentation
+	symmetryJitter: 2.0,
+	washOpacity: 26,
+	textureOpacity: 0.22
 };
 
 // Palette
 const RawPalette = {
 	deepRed: [200, 30, 30],
 	softPink: [255, 200, 200],
-	goldenYellow: [255, 200, 100],
 	mutedBlueGray: [150, 160, 180],
 	warmBeige: [240, 230, 210]
 };
 
 let Palette = {};
 
-// -----------------------------
+// ---------------------------------
 // State
-// -----------------------------
-let leftHalfPoints = []; // 2D array: [col][row] -> {x, y}
+// ---------------------------------
+let gridX = [];
+let gridY = [];
+let cornerR = []; // [i][j]
+let cornerK = []; // [i][j]
 let seedValue = Math.floor(Math.random() * 1e9);
 let paperTextureGfx = null;
 
-// -----------------------------
-// Setup & draw
-// -----------------------------
+// ---------------------------------
+// Setup / Draw
+// ---------------------------------
 function setup() {
 	const container = document.getElementById("container");
-	const cnv = createCanvas(Params.canvasWidth, Params.canvasHeight);
+	const cnv = createCanvas(Config.canvasWidth, Config.canvasHeight);
 	if (container) cnv.parent(container);
-	pixelDensity(2);
 	noLoop();
+	pixelDensity(2);
 	smooth();
 
-	buildPalette();
+	Palette = Object.fromEntries(Object.entries(RawPalette).map(([k, rgb]) => [k, color(...rgb)]));
 	regenerate();
 }
 
 function draw() {
-	// Pass 0: background
 	background(Palette.warmBeige);
 
-	// Pass 1: grid (pebble-like with parallel bands) (mirrored)
+	// Pass 1: the grid with parabolic intersections
 	drawMirrored(() => {
-		drawPebbleGrid();
-	}, Params.symmetryJitter, Params.symmetryJitter);
+		renderParabolicGrid();
+	}, Config.symmetryJitter, Config.symmetryJitter);
 
-	// Pass 2: shapes (circles + central figure)
+	// Pass 2: circles
 	drawMirrored(() => {
-		drawCircles();
-		drawCentralClown();
-	}, Params.symmetryJitter, Params.symmetryJitter);
+		renderCircles();
+	}, Config.symmetryJitter, Config.symmetryJitter);
 
-	// Pass 3: semi-transparent washes
-	drawWashes();
+	// Pass 3: washes
+	renderWashes();
 
-	// Pass 4: paper texture overlay (multiply)
+	// Pass 4: paper texture
 	applyPaperTexture();
-}
-
-// -----------------------------
-// Helpers: palette, seeding, regeneration
-// -----------------------------
-function buildPalette() {
-	Palette = Object.fromEntries(
-		Object.entries(RawPalette).map(([k, v]) => [k, color(...v)])
-	);
 }
 
 function regenerate() {
 	randomSeed(seedValue);
 	noiseSeed(seedValue);
-	buildGridPoints();
-	distortGridPoints();
+	buildGrid();
+	buildCorners();
 	buildPaperTexture();
 	redraw();
 }
@@ -118,312 +115,172 @@ function keyPressed() {
 		seedValue = Math.floor(Math.random() * 1e9);
 		regenerate();
 	}
-	if (key === "s" || key === "S") {
-		saveCanvas("the_great_clown", "png");
-	}
+	if (key === "s" || key === "S") saveCanvas("the_great_clown", "png");
 }
 
-// -----------------------------
-// Geometry builders
-// -----------------------------
-function buildGridPoints() {
-	leftHalfPoints = [];
-	for (let i = 0; i <= Params.gridColumns; i++) {
-		const columnPoints = [];
-		for (let j = 0; j <= Params.gridRows; j++) {
-			const x = map(i, 0, Params.gridColumns, 0, width / 2);
-			const y = map(j, 0, Params.gridRows, 0, height);
-			columnPoints.push({ x, y });
+// ---------------------------------
+// Grid computation
+// ---------------------------------
+function buildGrid() {
+	gridX = [];
+	gridY = [];
+	for (let i = 0; i <= Config.cols; i++) gridX.push(map(i, 0, Config.cols, 0, width / 2));
+	for (let j = 0; j <= Config.rows; j++) gridY.push(map(j, 0, Config.rows, 0, height));
+}
+
+function buildCorners() {
+	cornerR = [];
+	cornerK = [];
+	for (let i = 0; i <= Config.cols; i++) {
+		const rCol = [];
+		const kCol = [];
+		for (let j = 0; j <= Config.rows; j++) {
+			// Edge intersections remain sharp (radius 0) to keep sides flat
+			if (i === 0 || j === 0 || i === Config.cols || j === Config.rows) {
+				rCol.push(0);
+				kCol.push(1.0);
+				continue;
+			}
+			const cellW = min(gridX[i] - gridX[i - 1], gridX[i + 1] - gridX[i]);
+			const cellH = min(gridY[j] - gridY[j - 1], gridY[j + 1] - gridY[j]);
+			const base = min(cellW, cellH);
+			const r = random(Config.cornerRadiusMinFrac, Config.cornerRadiusMaxFrac) * base;
+			rCol.push(r);
+			kCol.push(random(Config.curveKMin, Config.curveKMax));
 		}
-		leftHalfPoints.push(columnPoints);
+		cornerR.push(rCol);
+		cornerK.push(kCol);
 	}
 }
 
-function distortGridPoints() {
-	for (let i = 0; i < leftHalfPoints.length; i++) {
-		for (let j = 0; j < leftHalfPoints[i].length; j++) {
-			const p = leftHalfPoints[i][j];
-			const n1 = noise(p.x * Params.noiseScale, p.y * Params.noiseScale);
-			const n2 = noise((p.y + 1000) * Params.noiseScale, (p.x - 1000) * Params.noiseScale);
-			const dx = (n1 - 0.5) * 2 * Params.distortionStrength;
-			const dy = (n2 - 0.5) * 2 * Params.distortionStrength;
-			p.x += dx;
-			p.y += dy;
-		}
-	}
-}
-
-// -----------------------------
-// Pass 1: Grid + Webbing
-// -----------------------------
-function drawGridLines() {
+// ---------------------------------
+// Rendering — Parabolic grid
+// ---------------------------------
+function renderParabolicGrid() {
 	stroke(Palette.mutedBlueGray);
-	strokeWeight(1);
 	noFill();
 
-	// Vertical lines
-	for (let i = 0; i < leftHalfPoints.length; i++) {
-		for (let j = 0; j < leftHalfPoints[i].length - 1; j++) {
-			const a = leftHalfPoints[i][j];
-			const b = leftHalfPoints[i][j + 1];
-			line(a.x, a.y, b.x, b.y);
-		}
-	}
+	for (let i = 0; i < Config.cols; i++) {
+		for (let j = 0; j < Config.rows; j++) {
+			const xL = gridX[i];
+			const xR = gridX[i + 1];
+			const yT = gridY[j];
+			const yB = gridY[j + 1];
 
-	// Horizontal lines
-	for (let j = 0; j <= Params.gridRows; j++) {
-		for (let i = 0; i < Params.gridColumns; i++) {
-			const a = leftHalfPoints[i][j];
-			const b = leftHalfPoints[i + 1][j];
-			line(a.x, a.y, b.x, b.y);
-		}
-	}
-}
+			const rTL = constrain(cornerR[i][j], 0, 0.5 * min(xR - xL, yB - yT));
+			const rTR = constrain(cornerR[i + 1][j], 0, 0.5 * min(xR - xL, yB - yT));
+			const rBR = constrain(cornerR[i + 1][j + 1], 0, 0.5 * min(xR - xL, yB - yT));
+			const rBL = constrain(cornerR[i][j + 1], 0, 0.5 * min(xR - xL, yB - yT));
 
-function drawWebbing() {
-	// Organic connections using soft bezier strands between neighbors
-	stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), 90);
-	strokeWeight(1);
-	noFill();
+			const kTL = cornerK[i][j];
+			const kTR = cornerK[i + 1][j];
+			const kBR = cornerK[i + 1][j + 1];
+			const kBL = cornerK[i][j + 1];
 
-	for (let i = 0; i < Params.gridColumns; i++) {
-		for (let j = 0; j < Params.gridRows; j++) {
-			const p00 = leftHalfPoints[i][j];
-			const p10 = leftHalfPoints[i + 1][j];
-			const p01 = leftHalfPoints[i][j + 1];
-			const p11 = leftHalfPoints[i + 1][j + 1];
+			const lines = Math.floor(random(Config.linesPerBorderMin, Config.linesPerBorderMax + 1));
+			const spacing = random(Config.lineSpacingMin, Config.lineSpacingMax);
 
-			// Horizontal strand (p00 -> p10)
-			const midHX = (p00.x + p10.x) * 0.5;
-			const bulgeH = (noise(midHX * 0.03, p00.y * 0.03) - 0.5) * 20;
-			bezier(p00.x, p00.y, midHX, p00.y + bulgeH, midHX, p10.y - bulgeH, p10.x, p10.y);
+			for (let n = 0; n < lines; n++) {
+				const o = n * spacing; // inward offset only to keep outside crisp
 
-			// Vertical strand (p00 -> p01)
-			const midVY = (p00.y + p01.y) * 0.5;
-			const bulgeV = (noise(p00.x * 0.03, midVY * 0.03) - 0.5) * 20;
-			bezier(p00.x, p00.y, p00.x + bulgeV, midVY, p01.x - bulgeV, midVY, p01.x, p01.y);
+				const xL2 = xL + o;
+				const xR2 = xR - o;
+				const yT2 = yT + o;
+				const yB2 = yB - o;
 
-			// Diagonal thin web
-			strokeWeight(0.7);
-			const n = noise((p00.x + p11.x) * 0.01, (p00.y + p11.y) * 0.01);
-			if (n > 0.55) line(p00.x, p00.y, p11.x, p11.y);
-			strokeWeight(1);
-		}
-	}
-}
+				const tl = max(rTL - o, 0);
+				const tr = max(rTR - o, 0);
+				const br = max(rBR - o, 0);
+				const bl = max(rBL - o, 0);
 
-// New: Pebble-like grid made of bands of parallel curved lines
-function drawPebbleGrid() {
-	noFill();
-	const baseCol = Palette.mutedBlueGray;
+				strokeWeight(random(Config.lineWeightMin, Config.lineWeightMax));
+				stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Config.lineAlpha + random(-24, 24));
 
-	// ---------------- Vertical bands ----------------
-	for (let i = 0; i <= Params.gridColumns; i++) {
-		const bandCount = Math.floor(random(Params.verticalLinesPerBandMin, Params.verticalLinesPerBandMax + 1));
-		const bandWidth = random(3.0, 7.0);
+				// Top edge (flat)
+				line(xL2 + tl, yT2, xR2 - tr, yT2);
+				// Right edge (flat)
+				line(xR2, yT2 + tr, xR2, yB2 - br);
+				// Bottom edge (flat)
+				line(xR2 - br, yB2, xL2 + bl, yB2);
+				// Left edge (flat)
+				line(xL2, yB2 - bl, xL2, yT2 + tl);
 
-		for (let j = 0; j < Params.gridRows; j++) {
-			const a = leftHalfPoints[i][j];
-			const b = leftHalfPoints[i][j + 1];
-			const seg = createVector(b.x - a.x, b.y - a.y);
-			const segLen = seg.mag();
-			if (segLen < 0.0001) continue;
-			const nrm = createVector(-seg.y, seg.x).normalize();
-
-			// Estimate local cell width using neighbor column
-			let localWidth = 20;
-			if (i < Params.gridColumns) {
-				const rTop = leftHalfPoints[i + 1][j];
-				const rBot = leftHalfPoints[i + 1][j + 1];
-				const w1 = createVector(rTop.x - a.x, rTop.y - a.y).mag();
-				const w2 = createVector(rBot.x - b.x, rBot.y - b.y).mag();
-				localWidth = (w1 + w2) * 0.5;
-			} else if (i > 0) {
-				const lTop = leftHalfPoints[i - 1][j];
-				const lBot = leftHalfPoints[i - 1][j + 1];
-				const w1 = createVector(a.x - lTop.x, a.y - lTop.y).mag();
-				const w2 = createVector(b.x - lBot.x, b.y - lBot.y).mag();
-				localWidth = (w1 + w2) * 0.5;
-			}
-
-			const bulge = localWidth * Params.parabolaCurveIntensity * random(0.7, 1.3);
-
-			for (let k = 0; k < bandCount; k++) {
-				const centerT = bandCount <= 1 ? 0 : map(k, 0, bandCount - 1, -0.5, 0.5);
-				const offsetBase = centerT * bandWidth;
-				const startOffset = offsetBase + randomGaussian(0, 0.25);
-				const endOffset = offsetBase + randomGaussian(0, 0.25);
-
-				const sx = a.x + nrm.x * startOffset;
-				const sy = a.y + nrm.y * startOffset;
-				const ex = b.x + nrm.x * endOffset;
-				const ey = b.y + nrm.y * endOffset;
-
-				const mx = (a.x + b.x) * 0.5;
-				const my = (a.y + b.y) * 0.5;
-				const c1x = lerp(sx, mx, 0.66) + nrm.x * bulge;
-				const c1y = lerp(sy, my, 0.66) + nrm.y * bulge;
-				const c2x = lerp(mx, ex, 0.66) + nrm.x * bulge;
-				const c2y = lerp(my, ey, 0.66) + nrm.y * bulge;
-
-				strokeWeight(random(Params.gridLineWeightMin, Params.gridLineWeightMax));
-				stroke(red(baseCol), green(baseCol), blue(baseCol), Params.gridBandAlpha + random(-24, 36));
-				bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
-			}
-		}
-	}
-
-	// ---------------- Horizontal bands ----------------
-	for (let j = 0; j <= Params.gridRows; j++) {
-		const bandCount = Math.floor(random(Params.horizontalLinesPerBandMin, Params.horizontalLinesPerBandMax + 1));
-		const bandWidth = random(2.5, 6.5);
-
-		for (let i = 0; i < Params.gridColumns; i++) {
-			const a = leftHalfPoints[i][j];
-			const b = leftHalfPoints[i + 1][j];
-			const seg = createVector(b.x - a.x, b.y - a.y);
-			const segLen = seg.mag();
-			if (segLen < 0.0001) continue;
-			const nrm = createVector(seg.y, -seg.x).normalize();
-
-			// Estimate local cell height using neighbor row
-			let localHeight = 20;
-			if (j < Params.gridRows) {
-				const bL = leftHalfPoints[i][j + 1];
-				const bR = leftHalfPoints[i + 1][j + 1];
-				const h1 = createVector(bL.x - a.x, bL.y - a.y).mag();
-				const h2 = createVector(bR.x - b.x, bR.y - b.y).mag();
-				localHeight = (h1 + h2) * 0.5;
-			} else if (j > 0) {
-				const tL = leftHalfPoints[i][j - 1];
-				const tR = leftHalfPoints[i + 1][j - 1];
-				const h1 = createVector(a.x - tL.x, a.y - tL.y).mag();
-				const h2 = createVector(b.x - tR.x, b.y - tR.y).mag();
-				localHeight = (h1 + h2) * 0.5;
-			}
-
-			const bulge = localHeight * Params.parabolaCurveIntensity * random(0.7, 1.3);
-
-			for (let k = 0; k < bandCount; k++) {
-				const centerT = bandCount <= 1 ? 0 : map(k, 0, bandCount - 1, -0.5, 0.5);
-				const offsetBase = centerT * bandWidth;
-				const startOffset = offsetBase + randomGaussian(0, 0.25);
-				const endOffset = offsetBase + randomGaussian(0, 0.25);
-
-				const sx = a.x + nrm.x * startOffset;
-				const sy = a.y + nrm.y * startOffset;
-				const ex = b.x + nrm.x * endOffset;
-				const ey = b.y + nrm.y * endOffset;
-
-				const mx = (a.x + b.x) * 0.5;
-				const my = (a.y + b.y) * 0.5;
-				const c1x = lerp(sx, mx, 0.66) + nrm.x * bulge;
-				const c1y = lerp(sy, my, 0.66) + nrm.y * bulge;
-				const c2x = lerp(mx, ex, 0.66) + nrm.x * bulge;
-				const c2y = lerp(my, ey, 0.66) + nrm.y * bulge;
-
-				strokeWeight(random(Params.gridLineWeightMin, Params.gridLineWeightMax));
-				stroke(red(baseCol), green(baseCol), blue(baseCol), Params.gridBandAlpha + random(-24, 36));
-				bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+				// Corners — cubic bezier arcs with parabolic feel
+				// Top-left
+				if (tl > 0) {
+					const sx = xL2 + tl, sy = yT2;
+					const ex = xL2, ey = yT2 + tl;
+					const c1x = sx - tl * kTL, c1y = sy;
+					const c2x = ex, c2y = ey - tl * kTL;
+					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+				}
+				// Top-right
+				if (tr > 0) {
+					const sx = xR2 - tr, sy = yT2;
+					const ex = xR2, ey = yT2 + tr;
+					const c1x = sx + tr * kTR, c1y = sy;
+					const c2x = ex, c2y = ey - tr * kTR;
+					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+				}
+				// Bottom-right
+				if (br > 0) {
+					const sx = xR2, sy = yB2 - br;
+					const ex = xR2 - br, ey = yB2;
+					const c1x = sx, c1y = sy + br * kBR;
+					const c2x = ex + br * kBR, c2y = ey;
+					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+				}
+				// Bottom-left
+				if (bl > 0) {
+					const sx = xL2 + bl, sy = yB2;
+					const ex = xL2, ey = yB2 - bl;
+					const c1x = sx - bl * kBL, c1y = sy;
+					const c2x = ex, c2y = ey + bl * kBL;
+					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+				}
 			}
 		}
 	}
 }
 
-// -----------------------------
-// Pass 2: Shapes (Circles + Central Figure)
-// -----------------------------
-function drawCircles() {
+// ---------------------------------
+// Circles
+// ---------------------------------
+function renderCircles() {
 	noStroke();
-	for (let i = 0; i < leftHalfPoints.length; i++) {
-		for (let j = 0; j < leftHalfPoints[i].length; j++) {
-			if (random() < Params.circleProbability) {
-				const p = leftHalfPoints[i][j];
-				const d = random(Params.circleSizeMin, Params.circleSizeMax);
-				const jitterX = randomGaussian(0, 1.2);
-				const jitterY = randomGaussian(0, 1.2);
-
-				// Outer ring (deep red)
+	for (let i = 0; i <= Config.cols; i++) {
+		for (let j = 0; j <= Config.rows; j++) {
+			if (i === 0 || j === 0 || i === Config.cols || j === Config.rows) continue;
+			if (random() < Config.circleProbability) {
+				const x = gridX[i] + randomGaussian(0, 1.2);
+				const y = gridY[j] + randomGaussian(0, 1.2);
+				const d = random(Config.circleSizeMin, Config.circleSizeMax);
 				fill(Palette.deepRed);
-				ellipse(p.x + jitterX, p.y + jitterY, d * 0.98, d * 0.98);
-
-				// Inner core (soft pink)
+				ellipse(x, y, d * 0.98, d * 0.98);
 				fill(Palette.softPink);
-				ellipse(p.x + jitterX * 0.6, p.y + jitterY * 0.6, d * 0.52, d * 0.52);
-
-				// Slight highlight
+				ellipse(x, y, d * 0.52, d * 0.52);
 				fill(255, 255, 255, 50);
-				ellipse(p.x + jitterX - d * 0.12, p.y + jitterY - d * 0.12, d * 0.25, d * 0.25);
+				ellipse(x - d * 0.12, y - d * 0.12, d * 0.25, d * 0.25);
 			}
 		}
 	}
 }
 
-function drawCentralClown() {
-	const centerX = width / 4; // center of left half
-
-	// Vertical body band
+// ---------------------------------
+// Wash + Paper Texture
+// ---------------------------------
+function renderWashes() {
 	noStroke();
-	fill(red(Palette.goldenYellow), green(Palette.goldenYellow), blue(Palette.goldenYellow), 190);
-	const bodyWidth = Math.max(18, width * 0.04);
-	rect(centerX - bodyWidth * 0.5, height * 0.22, bodyWidth, height * 0.58, 3);
-
-	// Face circle (upper-mid)
-	fill(Palette.goldenYellow);
-	const faceD = 68;
-	ellipse(centerX, height * 0.34, faceD, faceD);
-	fill(255, 255, 255, 45);
-	ellipse(centerX - faceD * 0.18, height * 0.33, faceD * 0.35, faceD * 0.35);
-
-	// Vertical streaks below (pant-legs feel)
-	stroke(Palette.mutedBlueGray);
-	strokeWeight(1.2);
-	const legBaseY = height * 0.79;
-	const legBottomY = height * 0.98;
-	for (let k = -2; k <= 2; k++) {
-		const off = k * (bodyWidth * 0.18);
-		const split = k % 2 === 0 ? -1 : 1;
-		const cx = centerX + off + random(-1, 1);
-		line(cx, legBaseY, cx + split * random(16, 36), legBottomY);
-	}
-
-	// Horizontal crossbar
-	noStroke();
-	fill(200, 200, 100, 180);
-	rect(0, height * 0.5 - 6, width / 2, 12);
-}
-
-// -----------------------------
-// Pass 3: Washes
-// -----------------------------
-function drawWashes() {
-	noStroke();
-	// Soft overall warm glaze
-	fill(255, 255, 200, Params.washOpacity);
+	fill(255, 255, 200, Config.washOpacity);
 	rect(0, 0, width, height);
-
-	// Subtle vignetting using translucent bands
-	for (let i = 0; i < 6; i++) {
-		const alpha = map(i, 0, 5, 10, 30);
-		fill(0, 0, 0, alpha);
-		rect(0, (i / 6) * height, width, height / 20);
-	}
-
-	// Light lavender wash near top to echo print ink
-	fill(210, 190, 230, 16);
-	rect(0, 0, width, height * 0.42);
 }
 
-// -----------------------------
-// Pass 4: Paper Texture
-// -----------------------------
 function buildPaperTexture() {
 	paperTextureGfx = createGraphics(width, height);
 	paperTextureGfx.pixelDensity(1);
 	paperTextureGfx.noStroke();
 	paperTextureGfx.clear();
 
-	// Base grain
 	for (let i = 0; i < width * height * 0.004; i++) {
 		const x = random(width);
 		const y = random(height);
@@ -432,27 +289,12 @@ function buildPaperTexture() {
 		paperTextureGfx.rect(x, y, random(0.5, 1.2), random(0.5, 1.2));
 	}
 
-	// Soft cloudy pulp
-	for (let i = 0; i < 1400; i++) {
+	for (let i = 0; i < 1200; i++) {
 		const x = random(width);
 		const y = random(height);
-		const r = random(6, 24);
+		const r = random(6, 20);
 		paperTextureGfx.fill(255, 255, 255, 10);
 		paperTextureGfx.ellipse(x, y, r, r);
-	}
-
-	// Deckled edges
-	paperTextureGfx.noFill();
-	paperTextureGfx.stroke(0, 0, 0, 20);
-	for (let i = 0; i < 30; i++) {
-		paperTextureGfx.strokeWeight(random(0.2, 0.6));
-		paperTextureGfx.rect(
-			2 + random(-1, 1),
-			2 + random(-1, 1),
-			width - 4 + random(-2, 2),
-			height - 4 + random(-2, 2),
-			2
-		);
 	}
 }
 
@@ -460,26 +302,24 @@ function applyPaperTexture() {
 	if (!paperTextureGfx) return;
 	push();
 	blendMode(MULTIPLY);
-	tint(255, Params.textureOpacity * 255);
+	tint(255, Config.textureOpacity * 255);
 	image(paperTextureGfx, 0, 0, width, height);
 	pop();
 	noTint();
 }
 
-// -----------------------------
-// Utility: Vertical mirroring with slight jitter
-// -----------------------------
-function drawMirrored(drawHalfFn, jitterX = 0, jitterY = 0) {
+// ---------------------------------
+// Utility — mirror
+// ---------------------------------
+function drawMirrored(fn, jitterX = 0, jitterY = 0) {
 	push();
-	drawHalfFn();
+	fn();
 	pop();
-
 	push();
 	translate(width, 0);
-	scale(-1, 1); // mirror across center line
-	translate(random(-jitterX, jitterX), random(-jitterY, jitterY)); // misregistration
-	drawHalfFn();
+	scale(-1, 1);
+	translate(random(-jitterX, jitterX), random(-jitterY, jitterY));
+	fn();
 	pop();
 }
-
 

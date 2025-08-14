@@ -116,7 +116,13 @@ const Example = {
 	wcLayersMax: 12,
 	wcJitter: 0.8, // px
 	wcAlphaMin: 30,
-	wcAlphaMax: 110
+	wcAlphaMax: 110,
+	// Frayed edge parameters
+	frayStep: 2.2, // sampling step along the path (px)
+	frayAmpMin: 0.6,
+	frayAmpMax: 1.8,
+	frayNoiseFreq: 0.08,
+	frayOutwardBias: 0.7 // probability to bias displacement outward
 };
 
 // Palette
@@ -157,7 +163,8 @@ function setup() {
 }
 
 function draw() {
-	background(Palette.warmBeige);
+    // Paper background first, then ink
+    renderPaperBackground();
 
 	// For the example view: clean rounded-rect tiles + center bar stack
 	renderRoundedRectExample();
@@ -454,7 +461,7 @@ function renderRoundedRectExample() {
             const w = colWidths[i];
             const h = rowHeights[j];
             const r = min(w, h) * Example.cornerRadiusFrac;
-            watercolorRoundedRect(x, y, w, h, r);
+            watercolorRoundedRectFrayed(x, y, w, h, r);
         }
     }
 
@@ -466,7 +473,7 @@ function renderRoundedRectExample() {
         let startX = (width - totalBarsW) / 2;
         const barR = tileHApprox * 0.18;
         for (let i = 0; i < Example.barCount; i++) {
-            watercolorRoundedRect(startX, gy, barW, height - 2 * gy, barR);
+            watercolorRoundedRectFrayed(startX, gy, barW, height - 2 * gy, barR);
             startX += barW + barS;
         }
     }
@@ -503,6 +510,69 @@ function watercolorRoundedRect(x, y, w, h, r) {
         roundedRect(x, y, w, h, r);
         pop();
     }
+}
+
+// Frayed variant: strokes rendered as noisy polylines following the rounded rect
+function watercolorRoundedRectFrayed(x, y, w, h, r) {
+    const layers = Math.floor(random(Example.wcLayersMin, Example.wcLayersMax + 1));
+    const colors = [Palette.mutedBlueGray, Palette.deepRed];
+
+    // Build the clean outline as a list of points along the rounded rect
+    const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
+
+    for (let i = 0; i < layers; i++) {
+        const col = random(colors);
+        const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
+        stroke(red(col), green(col), blue(col), a);
+        strokeWeight(Example.strokeWeight + random(-0.7, 0.7));
+
+        // Displace each point outward-ish with noise to create fray
+        const amp = random(Example.frayAmpMin, Example.frayAmpMax);
+        beginShape();
+        for (let p = 0; p < outline.length; p++) {
+            const pt = outline[p];
+            const nx = cos(pt.angle);
+            const ny = sin(pt.angle);
+            const outward = random() < Example.frayOutwardBias ? 1 : -1;
+            const n = noise(pt.x * Example.frayNoiseFreq + i * 10.0, pt.y * Example.frayNoiseFreq + i * 17.0);
+            const d = (n - 0.5) * 2 * amp * outward;
+            const jx = random(-Example.wcJitter, Example.wcJitter);
+            const jy = random(-Example.wcJitter, Example.wcJitter);
+            vertex(pt.x + nx * d + jx, pt.y + ny * d + jy);
+        }
+        endShape(CLOSE);
+    }
+}
+
+// Sample points around a rounded rectangle with their outward normal angle
+function sampleRoundedRect(x, y, w, h, r, step) {
+    const pts = [];
+    const k = 0.5523;
+    const ox = r * k, oy = r * k;
+
+    // Build four edges as polylines with arcs approximated by Bézier sampling
+    function sampleBezier(ax, ay, bx, by, cx, cy, dx, dy) {
+        const len = max(4, Math.ceil(dist(ax, ay, dx, dy) / step));
+        for (let t = 0; t <= 1.00001; t += 1 / len) {
+            const x1 = bezierPoint(ax, bx, cx, dx, t);
+            const y1 = bezierPoint(ay, by, cy, dy, t);
+            const tx = bezierTangent(ax, bx, cx, dx, t);
+            const ty = bezierTangent(ay, by, cy, dy, t);
+            const ang = atan2(ty, tx) - HALF_PI; // outward normal
+            pts.push({ x: x1, y: y1, angle: ang });
+        }
+    }
+
+    // Top edge: TL arc -> straight -> TR arc
+    sampleBezier(x + r, y, x + r - ox, y, x, y + r - oy, x, y + r);
+    // Right edge: TR arc
+    sampleBezier(x, y + r, x, y + h - r + oy, x + r - ox, y + h, x + r, y + h);
+    // Bottom: BR arc
+    sampleBezier(x + r, y + h, x + w - r + ox, y + h, x + w, y + h - r + oy, x + w, y + h - r);
+    // Left: BL arc
+    sampleBezier(x + w, y + h - r, x + w, y + r - oy, x + w - r + ox, y, x + w - r, y);
+
+    return pts;
 }
 
 // ---------------------------------
@@ -568,6 +638,21 @@ function applyPaperTexture() {
 	image(paperTextureGfx, 0, 0, width, height);
 	pop();
 	noTint();
+}
+
+// Soft paper base using noise and grain; called at start of draw
+function renderPaperBackground() {
+    background(Palette.warmBeige);
+    // Subtle mottling
+    noStroke();
+    for (let i = 0; i < 1200; i++) {
+        const x = random(width);
+        const y = random(height);
+        const r = random(8, 36);
+        fill(255, 255, 255, 8);
+        ellipse(x, y, r, r);
+    }
+    applyPaperTexture();
 }
 
 // ---------------------------------

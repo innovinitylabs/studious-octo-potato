@@ -17,8 +17,8 @@
 const Config = {
 	canvasWidth: 800,
 	canvasHeight: 1200,
-	cols: 12,
-	rows: 16,
+	cols: 4, // fewer divs → huge blocks
+	rows: 7,
 
 	// Line bands
 	linesPerBorderMin: 2,
@@ -122,10 +122,28 @@ function keyPressed() {
 // Grid computation
 // ---------------------------------
 function buildGrid() {
-	gridX = [];
-	gridY = [];
-	for (let i = 0; i <= Config.cols; i++) gridX.push(map(i, 0, Config.cols, 0, width / 2));
-	for (let j = 0; j <= Config.rows; j++) gridY.push(map(j, 0, Config.rows, 0, height));
+	gridX = [0];
+	gridY = [0];
+
+	// Variable column widths
+	let weightsX = [];
+	for (let i = 0; i < Config.cols; i++) weightsX.push(random(0.9, 1.9));
+	let sumX = weightsX.reduce((a, b) => a + b, 0);
+	let accX = 0;
+	for (let i = 0; i < Config.cols; i++) {
+		accX += (weightsX[i] / sumX) * (width / 2);
+		gridX.push(accX);
+	}
+
+	// Variable row heights
+	let weightsY = [];
+	for (let j = 0; j < Config.rows; j++) weightsY.push(random(0.9, 2.1));
+	let sumY = weightsY.reduce((a, b) => a + b, 0);
+	let accY = 0;
+	for (let j = 0; j < Config.rows; j++) {
+		accY += (weightsY[j] / sumY) * height;
+		gridY.push(accY);
+	}
 }
 
 function buildCorners() {
@@ -177,8 +195,9 @@ function renderParabolicGrid() {
 			const kBR = cornerK[i + 1][j + 1];
 			const kBL = cornerK[i][j + 1];
 
-			const lines = Math.floor(random(Config.linesPerBorderMin, Config.linesPerBorderMax + 1));
-			const spacing = random(Config.lineSpacingMin, Config.lineSpacingMax);
+			// For huge blocks, use more band lines near edges and fewer inside
+			const lines = Math.floor(random(Config.linesPerBorderMin + 1, Config.linesPerBorderMax + 2));
+			const spacing = random(Config.lineSpacingMin * 1.2, Config.lineSpacingMax * 1.8);
 
 			for (let n = 0; n < lines; n++) {
 				const o = n * spacing; // inward offset only to keep outside crisp

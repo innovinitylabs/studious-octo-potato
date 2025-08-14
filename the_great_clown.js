@@ -73,6 +73,21 @@ const Config = {
 	textureOpacity: 0.22
 };
 
+// Extra controls for pebble-like edge bands (multi-line ink along seams)
+const Pebble = {
+	vertLinesMin: 3,
+	vertLinesMax: 7,
+	horzLinesMin: 2,
+	horzLinesMax: 6,
+	bandWidthMin: 2.5,
+	bandWidthMax: 6.5,
+	bulgeIntensity: 0.22, // fraction of local cell size
+	strokeAlpha: 90,
+	weightMin: 0.7,
+	weightMax: 1.6,
+	redInkChance: 0.18 // chance a strand uses a reddish tint instead of blue-gray
+};
+
 // Palette
 const RawPalette = {
 	deepRed: [200, 30, 30],
@@ -116,6 +131,7 @@ function draw() {
 	// Pass 1: the grid with parabolic intersections
 	drawMirrored(() => {
 		renderParabolicGrid();
+		renderPebbleEdgeBands(); // add multi-strand ink along seams like reference
 	}, Config.symmetryJitter, Config.symmetryJitter);
 
 	// Pass 2: circles at interior grid nodes
@@ -304,6 +320,68 @@ function renderParabolicGrid() {
 					const c2x = ex, c2y = ey + bl * kBL;
 					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
 				}
+			}
+		}
+	}
+}
+
+// -------------------------------------------------
+// Edge bands: layered strands hugging cell borders
+// Gives the marbled/ink-pulled feel in the reference crop
+// -------------------------------------------------
+function renderPebbleEdgeBands() {
+	noFill();
+	for (let i = 0; i < Config.cols; i++) {
+		for (let j = 0; j < Config.rows; j++) {
+			const xL = gridX[i];
+			const xR = gridX[i + 1];
+			const yT = gridY[j];
+			const yB = gridY[j + 1];
+
+			const cellW = xR - xL;
+			const cellH = yB - yT;
+			const bulgeBase = min(cellW, cellH) * Pebble.bulgeIntensity;
+
+			// Vertical seam on the right side of the cell
+			const vCount = Math.floor(random(Pebble.vertLinesMin, Pebble.vertLinesMax + 1));
+			const vBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
+			for (let k = 0; k < vCount; k++) {
+				const centerT = vCount <= 1 ? 0 : map(k, 0, vCount - 1, -0.5, 0.5);
+				const off = centerT * vBand + randomGaussian(0, 0.35);
+				const sx = xR - off;
+				const ex = xR - off;
+				const y1 = yT;
+				const y2 = yB;
+				const midY = (y1 + y2) * 0.5;
+				const curve = bulgeBase * random(0.7, 1.3);
+				strokeWeight(random(Pebble.weightMin, Pebble.weightMax));
+				if (random() < Pebble.redInkChance) {
+					stroke(red(Palette.deepRed), green(Palette.deepRed), blue(Palette.deepRed), Pebble.strokeAlpha);
+				} else {
+					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Pebble.strokeAlpha);
+				}
+				bezier(sx, y1, sx + curve, lerp(y1, midY, 0.66), ex + curve, lerp(midY, y2, 0.66), ex, y2);
+			}
+
+			// Horizontal seam at the bottom of the cell
+			const hCount = Math.floor(random(Pebble.horzLinesMin, Pebble.horzLinesMax + 1));
+			const hBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
+			for (let k = 0; k < hCount; k++) {
+				const centerT = hCount <= 1 ? 0 : map(k, 0, hCount - 1, -0.5, 0.5);
+				const off = centerT * hBand + randomGaussian(0, 0.35);
+				const sy = yB - off;
+				const ey = yB - off;
+				const x1 = xL;
+				const x2 = xR;
+				const midX = (x1 + x2) * 0.5;
+				const curve = bulgeBase * random(0.7, 1.3);
+				strokeWeight(random(Pebble.weightMin, Pebble.weightMax));
+				if (random() < Pebble.redInkChance) {
+					stroke(red(Palette.deepRed), green(Palette.deepRed), blue(Palette.deepRed), Pebble.strokeAlpha);
+				} else {
+					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Pebble.strokeAlpha);
+				}
+				bezier(x1, sy, lerp(x1, midX, 0.66), sy + curve, lerp(midX, x2, 0.66), ey + curve, x2, ey);
 			}
 		}
 	}

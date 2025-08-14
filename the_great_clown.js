@@ -98,7 +98,8 @@ const Example = {
 	cols: 4, // populated/overridden at runtime
 	rows: 3, // populated/overridden at runtime
 
-	gapPx: 20, // constant gap in pixels (both axes)
+    gapX: 20, // horizontal gap in pixels
+    gapY: 4.2, // vertical gap in pixels (tighter per request)
 	cornerRadiusFrac: 0.08, // of tile min(w,h)
 	strokeWeight: 2.0,
 	barCount: 7, // optional center bars
@@ -417,8 +418,8 @@ function renderRoundedRectExample() {
 
     // Build non-uniform column widths and row heights that still fit the
     // overall canvas with consistent gutters.
-    const gx = Example.gapPx;
-    const gy = Example.gapPx;
+    const gx = Example.gapX;
+    const gy = Example.gapY;
 
     // Column widths by weights
     let colWeights = [];

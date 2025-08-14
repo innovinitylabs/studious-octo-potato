@@ -90,13 +90,18 @@ const Pebble = {
 
 // Clean grid example controls (for the provided rounded-rect mock)
 const Example = {
-	rows: 3,
-	cols: 4, // final grid columns across whole canvas
-	gutterXFrac: 0.04, // as fraction of canvas width
-	gutterYFrac: 0.06, // as fraction of canvas height
+	// Dynamic rows/cols — chosen on regenerate() between these min/max values
+	minCols: 3,
+	maxCols: 6,
+	minRows: 2,
+	maxRows: 4,
+	cols: 4, // populated/overridden at runtime
+	rows: 3, // populated/overridden at runtime
+
+	gapPx: 20, // constant gap in pixels (both axes)
 	cornerRadiusFrac: 0.08, // of tile min(w,h)
 	strokeWeight: 2.0,
-	barCount: 7, // total bars centered at the vertical midline
+	barCount: 7, // optional center bars
 	barWidthFrac: 0.012, // of canvas width
 	barSpacingFrac: 0.012,
 	drawBars: false, // default off per latest request
@@ -154,6 +159,9 @@ function regenerate() {
 	// Seed PRNG + Perlin and rebuild all dependent data.
 	randomSeed(seedValue);
 	noiseSeed(seedValue);
+	// Choose dynamic grid size each regeneration
+	Example.cols = Math.floor(random(Example.minCols, Example.maxCols + 1));
+	Example.rows = Math.floor(random(Example.minRows, Example.maxRows + 1));
 	buildGrid();
 	buildCorners();
 	buildPaperTexture();
@@ -409,8 +417,8 @@ function renderRoundedRectExample() {
 
     // Build non-uniform column widths and row heights that still fit the
     // overall canvas with consistent gutters.
-    const gx = width * Example.gutterXFrac;
-    const gy = height * Example.gutterYFrac;
+    const gx = Example.gapPx;
+    const gy = Example.gapPx;
 
     // Column widths by weights
     let colWeights = [];
@@ -446,8 +454,8 @@ function renderRoundedRectExample() {
 
     if (Example.drawBars) {
         const tileHApprox = usableH / rows;
-        const barW = width * Example.barWidthFrac;
-        const barS = width * Example.barSpacingFrac;
+    const barW = width * Example.barWidthFrac;
+    const barS = width * Example.barSpacingFrac;
         const totalBarsW = Example.barCount * barW + (Example.barCount - 1) * barS;
         let startX = (width - totalBarsW) / 2;
         const barR = tileHApprox * 0.18;

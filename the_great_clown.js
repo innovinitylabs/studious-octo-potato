@@ -26,7 +26,18 @@ const Params = {
 	circleSizeMax: 48,
 	symmetryJitter: 3.0, // px offset to make mirroring imperfect
 	washOpacity: 26, // 0–255
-	textureOpacity: 0.22 // 0–1
+	textureOpacity: 0.22, // 0–1
+
+	// Pebble-grid controls
+	verticalLinesPerBandMin: 3,
+	verticalLinesPerBandMax: 6,
+	horizontalLinesPerBandMin: 2,
+	horizontalLinesPerBandMax: 5,
+	gridBandAlpha: 120,
+	gridLineWeightMin: 0.7,
+	gridLineWeightMax: 1.9,
+	parabolaCurveIntensity: 0.22, // fraction of local cell width/height
+	stepsPerCell: 10
 };
 
 // Palette
@@ -66,10 +77,9 @@ function draw() {
 	// Pass 0: background
 	background(Palette.warmBeige);
 
-	// Pass 1: grid + webbing (mirrored)
+	// Pass 1: grid (pebble-like with parallel bands) (mirrored)
 	drawMirrored(() => {
-		drawGridLines();
-		drawWebbing();
+		drawPebbleGrid();
 	}, Params.symmetryJitter, Params.symmetryJitter);
 
 	// Pass 2: shapes (circles + central figure)
@@ -198,6 +208,124 @@ function drawWebbing() {
 			const n = noise((p00.x + p11.x) * 0.01, (p00.y + p11.y) * 0.01);
 			if (n > 0.55) line(p00.x, p00.y, p11.x, p11.y);
 			strokeWeight(1);
+		}
+	}
+}
+
+// New: Pebble-like grid made of bands of parallel curved lines
+function drawPebbleGrid() {
+	noFill();
+	const baseCol = Palette.mutedBlueGray;
+
+	// ---------------- Vertical bands ----------------
+	for (let i = 0; i <= Params.gridColumns; i++) {
+		const bandCount = Math.floor(random(Params.verticalLinesPerBandMin, Params.verticalLinesPerBandMax + 1));
+		const bandWidth = random(3.0, 7.0);
+
+		for (let j = 0; j < Params.gridRows; j++) {
+			const a = leftHalfPoints[i][j];
+			const b = leftHalfPoints[i][j + 1];
+			const seg = createVector(b.x - a.x, b.y - a.y);
+			const segLen = seg.mag();
+			if (segLen < 0.0001) continue;
+			const nrm = createVector(-seg.y, seg.x).normalize();
+
+			// Estimate local cell width using neighbor column
+			let localWidth = 20;
+			if (i < Params.gridColumns) {
+				const rTop = leftHalfPoints[i + 1][j];
+				const rBot = leftHalfPoints[i + 1][j + 1];
+				const w1 = createVector(rTop.x - a.x, rTop.y - a.y).mag();
+				const w2 = createVector(rBot.x - b.x, rBot.y - b.y).mag();
+				localWidth = (w1 + w2) * 0.5;
+			} else if (i > 0) {
+				const lTop = leftHalfPoints[i - 1][j];
+				const lBot = leftHalfPoints[i - 1][j + 1];
+				const w1 = createVector(a.x - lTop.x, a.y - lTop.y).mag();
+				const w2 = createVector(b.x - lBot.x, b.y - lBot.y).mag();
+				localWidth = (w1 + w2) * 0.5;
+			}
+
+			const bulge = localWidth * Params.parabolaCurveIntensity * random(0.7, 1.3);
+
+			for (let k = 0; k < bandCount; k++) {
+				const centerT = bandCount <= 1 ? 0 : map(k, 0, bandCount - 1, -0.5, 0.5);
+				const offsetBase = centerT * bandWidth;
+				const startOffset = offsetBase + randomGaussian(0, 0.25);
+				const endOffset = offsetBase + randomGaussian(0, 0.25);
+
+				const sx = a.x + nrm.x * startOffset;
+				const sy = a.y + nrm.y * startOffset;
+				const ex = b.x + nrm.x * endOffset;
+				const ey = b.y + nrm.y * endOffset;
+
+				const mx = (a.x + b.x) * 0.5;
+				const my = (a.y + b.y) * 0.5;
+				const c1x = lerp(sx, mx, 0.66) + nrm.x * bulge;
+				const c1y = lerp(sy, my, 0.66) + nrm.y * bulge;
+				const c2x = lerp(mx, ex, 0.66) + nrm.x * bulge;
+				const c2y = lerp(my, ey, 0.66) + nrm.y * bulge;
+
+				strokeWeight(random(Params.gridLineWeightMin, Params.gridLineWeightMax));
+				stroke(red(baseCol), green(baseCol), blue(baseCol), Params.gridBandAlpha + random(-24, 36));
+				bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+			}
+		}
+	}
+
+	// ---------------- Horizontal bands ----------------
+	for (let j = 0; j <= Params.gridRows; j++) {
+		const bandCount = Math.floor(random(Params.horizontalLinesPerBandMin, Params.horizontalLinesPerBandMax + 1));
+		const bandWidth = random(2.5, 6.5);
+
+		for (let i = 0; i < Params.gridColumns; i++) {
+			const a = leftHalfPoints[i][j];
+			const b = leftHalfPoints[i + 1][j];
+			const seg = createVector(b.x - a.x, b.y - a.y);
+			const segLen = seg.mag();
+			if (segLen < 0.0001) continue;
+			const nrm = createVector(seg.y, -seg.x).normalize();
+
+			// Estimate local cell height using neighbor row
+			let localHeight = 20;
+			if (j < Params.gridRows) {
+				const bL = leftHalfPoints[i][j + 1];
+				const bR = leftHalfPoints[i + 1][j + 1];
+				const h1 = createVector(bL.x - a.x, bL.y - a.y).mag();
+				const h2 = createVector(bR.x - b.x, bR.y - b.y).mag();
+				localHeight = (h1 + h2) * 0.5;
+			} else if (j > 0) {
+				const tL = leftHalfPoints[i][j - 1];
+				const tR = leftHalfPoints[i + 1][j - 1];
+				const h1 = createVector(a.x - tL.x, a.y - tL.y).mag();
+				const h2 = createVector(b.x - tR.x, b.y - tR.y).mag();
+				localHeight = (h1 + h2) * 0.5;
+			}
+
+			const bulge = localHeight * Params.parabolaCurveIntensity * random(0.7, 1.3);
+
+			for (let k = 0; k < bandCount; k++) {
+				const centerT = bandCount <= 1 ? 0 : map(k, 0, bandCount - 1, -0.5, 0.5);
+				const offsetBase = centerT * bandWidth;
+				const startOffset = offsetBase + randomGaussian(0, 0.25);
+				const endOffset = offsetBase + randomGaussian(0, 0.25);
+
+				const sx = a.x + nrm.x * startOffset;
+				const sy = a.y + nrm.y * startOffset;
+				const ex = b.x + nrm.x * endOffset;
+				const ey = b.y + nrm.y * endOffset;
+
+				const mx = (a.x + b.x) * 0.5;
+				const my = (a.y + b.y) * 0.5;
+				const c1x = lerp(sx, mx, 0.66) + nrm.x * bulge;
+				const c1y = lerp(sy, my, 0.66) + nrm.y * bulge;
+				const c2x = lerp(mx, ex, 0.66) + nrm.x * bulge;
+				const c2y = lerp(my, ey, 0.66) + nrm.y * bulge;
+
+				strokeWeight(random(Params.gridLineWeightMin, Params.gridLineWeightMax));
+				stroke(red(baseCol), green(baseCol), blue(baseCol), Params.gridBandAlpha + random(-24, 36));
+				bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+			}
 		}
 	}
 }

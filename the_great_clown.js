@@ -88,6 +88,18 @@ const Pebble = {
 	redInkChance: 0.18 // chance a strand uses a reddish tint instead of blue-gray
 };
 
+// Clean grid example controls (for the provided rounded-rect mock)
+const Example = {
+	rows: 3,
+	gutterXFrac: 0.04, // as fraction of canvas width
+	gutterYFrac: 0.06, // as fraction of canvas height
+	cornerRadiusFrac: 0.08, // of tile height
+	strokeWeight: 2.0,
+	barCount: 7, // total bars centered at the vertical midline
+	barWidthFrac: 0.012, // of canvas width
+	barSpacingFrac: 0.012
+};
+
 // Palette
 const RawPalette = {
 	deepRed: [200, 30, 30],
@@ -128,22 +140,8 @@ function setup() {
 function draw() {
 	background(Palette.warmBeige);
 
-	// Pass 1: the grid with parabolic intersections
-	drawMirrored(() => {
-		renderParabolicGrid();
-		renderPebbleEdgeBands(); // add multi-strand ink along seams like reference
-	}, Config.symmetryJitter, Config.symmetryJitter);
-
-	// Pass 2: circles at interior grid nodes
-	drawMirrored(() => {
-		renderCircles();
-	}, Config.symmetryJitter, Config.symmetryJitter);
-
-	// Pass 3: washes (subtle unifying glaze)
-	renderWashes();
-
-	// Pass 4: paper texture (multiply overlay)
-	applyPaperTexture();
+	// For the example view: clean rounded-rect tiles + center bar stack
+	renderRoundedRectExample();
 }
 
 function regenerate() {
@@ -387,6 +385,64 @@ function renderPebbleEdgeBands() {
 			}
 		}
 	}
+}
+
+// -------------------------------------------------
+// Simple example renderer: 3 rows × 4 columns of rounded rectangles
+// with a stack of vertical rounded bars at the exact middle.
+// Mirrors are not used here; we explicitly draw both sides for clarity.
+// -------------------------------------------------
+function renderRoundedRectExample() {
+	background(255);
+	stroke(20);
+	strokeWeight(Example.strokeWeight);
+	noFill();
+
+	const rows = Example.rows;
+	const cols = 4; // final layout target
+	const gx = width * Example.gutterXFrac;
+	const gy = height * Example.gutterYFrac;
+	const totalGx = gx * (cols + 1);
+	const totalGy = gy * (rows + 1);
+	const tileW = (width - totalGx) / cols;
+	const tileH = (height - totalGy) / rows;
+	const r = tileH * Example.cornerRadiusFrac;
+
+	// Tiles
+	for (let j = 0; j < rows; j++) {
+		for (let i = 0; i < cols; i++) {
+			const x = gx + i * (tileW + gx);
+			const y = gy + j * (tileH + gy);
+			roundedRect(x, y, tileW, tileH, r);
+		}
+	}
+
+	// Center bar group
+	const barW = width * Example.barWidthFrac;
+	const barS = width * Example.barSpacingFrac;
+	const totalBarsW = Example.barCount * barW + (Example.barCount - 1) * barS;
+	let startX = (width - totalBarsW) / 2;
+	const barR = tileH * 0.18;
+	for (let i = 0; i < Example.barCount; i++) {
+		roundedRect(startX, gy, barW, height - 2 * gy, barR);
+		startX += barW + barS;
+	}
+}
+
+function roundedRect(x, y, w, h, r) {
+	const k = 0.5523; // near-circular corner
+	const ox = r * k;
+	const oy = r * k;
+	beginShape();
+	vertex(x + r, y);
+	bezierVertex(x + r - ox, y, x, y + r - oy, x, y + r);
+	vertex(x, y + h - r);
+	bezierVertex(x, y + h - r + oy, x + r - ox, y + h, x + r, y + h);
+	vertex(x + w - r, y + h);
+	bezierVertex(x + w - r + ox, y + h, x + w, y + h - r + oy, x + w, y + h - r);
+	vertex(x + w, y + r);
+	bezierVertex(x + w, y + r - oy, x + w - r + ox, y, x + w - r, y);
+	endShape(CLOSE);
 }
 
 // ---------------------------------

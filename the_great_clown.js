@@ -638,21 +638,32 @@ function buildPaperTexture() {
 	paperTextureGfx.noStroke();
 	paperTextureGfx.clear();
 
-	for (let i = 0; i < width * height * 0.004; i++) {
+    // Fine grain dots
+    for (let i = 0; i < width * height * 0.006; i++) {
 		const x = random(width);
 		const y = random(height);
-		const v = random(230, 255);
-		paperTextureGfx.fill(v, v, v, 18);
-		paperTextureGfx.rect(x, y, random(0.5, 1.2), random(0.5, 1.2));
+        const v = random(230, 250);
+        paperTextureGfx.fill(v, v, v, 20);
+        paperTextureGfx.rect(x, y, random(0.4, 1.1), random(0.4, 1.1));
 	}
 
-	for (let i = 0; i < 1200; i++) {
+    // Subtle pulp clouds
+    for (let i = 0; i < 2200; i++) {
 		const x = random(width);
 		const y = random(height);
-		const r = random(6, 20);
-		paperTextureGfx.fill(255, 255, 255, 10);
+        const r = random(4, 26);
+        paperTextureGfx.fill(255, 255, 255, 12);
 		paperTextureGfx.ellipse(x, y, r, r);
 	}
+
+    // Light vignette
+    const g = paperTextureGfx;
+    g.noFill();
+    g.stroke(0, 0, 0, 18);
+    for (let i = 0; i < 35; i++) {
+        g.strokeWeight(0.6);
+        g.rect(3 + i, 3 + i, width - 6 - i * 2, height - 6 - i * 2, 2);
+    }
 }
 
 function applyPaperTexture() {
@@ -700,7 +711,11 @@ function renderPaperBackground() {
             stroke(255, 255, 255, 12);
         }
     }
+    // Stronger visible grain
+    const prev = Config.textureOpacity;
+    Config.textureOpacity = 0.35;
     applyPaperTexture();
+    Config.textureOpacity = prev;
 }
 
 // ---------------------------------

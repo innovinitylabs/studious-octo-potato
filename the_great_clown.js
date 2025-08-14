@@ -21,24 +21,24 @@ const Config = {
 	rows: 7,
 
 	// Line bands
-	linesPerBorderMin: 2,
-	linesPerBorderMax: 5,
-	lineSpacingMin: 1.1,
-	lineSpacingMax: 2.0,
-	lineWeightMin: 0.8,
-	lineWeightMax: 1.8,
+	linesPerBorderMin: 1,
+	linesPerBorderMax: 1,
+	lineSpacingMin: 1.0,
+	lineSpacingMax: 1.0,
+	lineWeightMin: 1.2,
+	lineWeightMax: 2.2,
 	lineAlpha: 120,
 
 	// Intersection rounding (parabolic feel)
-	cornerRadiusMinFrac: 0.05, // of min(cellW, cellH)
-	cornerRadiusMaxFrac: 0.22,
-	curveKMin: 0.7, // cubic-bezier handle length factor relative to radius
-	curveKMax: 1.25,
+	cornerRadiusMinFrac: 0.12, // of min(cellW, cellH)
+	cornerRadiusMaxFrac: 0.38,
+	curveKMin: 1.2, // handle length factor relative to radius (parabola-like)
+	curveKMax: 2.0,
 
 	// Circles
 	circleProbability: 0.26,
 	circleSizeMin: 18,
-	circleSizeMax: 48,
+	circleSizeMax: 69,
 
 	// Presentation
 	symmetryJitter: 2.0,
@@ -195,9 +195,9 @@ function renderParabolicGrid() {
 			const kBR = cornerK[i + 1][j + 1];
 			const kBL = cornerK[i][j + 1];
 
-			// For huge blocks, use more band lines near edges and fewer inside
-			const lines = Math.floor(random(Config.linesPerBorderMin + 1, Config.linesPerBorderMax + 2));
-			const spacing = random(Config.lineSpacingMin * 1.2, Config.lineSpacingMax * 1.8);
+			// Single border per cell now
+			const lines = 1;
+			const spacing = 1.0;
 
 			for (let n = 0; n < lines; n++) {
 				const o = n * spacing; // inward offset only to keep outside crisp
@@ -225,7 +225,7 @@ function renderParabolicGrid() {
 				line(xL2, yB2 - bl, xL2, yT2 + tl);
 
 				// Corners — cubic bezier arcs with parabolic feel
-				// Top-left
+				// Top-left (stronger parabola: longer handles)
 				if (tl > 0) {
 					const sx = xL2 + tl, sy = yT2;
 					const ex = xL2, ey = yT2 + tl;

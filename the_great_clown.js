@@ -91,10 +91,10 @@ const Pebble = {
 // Clean grid example controls (for the provided rounded-rect mock)
 const Example = {
 	// Dynamic rows/cols — chosen on regenerate() between these min/max values
-	minCols: 3,
-	maxCols: 6,
-	minRows: 2,
-	maxRows: 4,
+	minCols: 6,
+	maxCols: 10,
+	minRows: 4,
+	maxRows: 8,
 	cols: 4, // populated/overridden at runtime
 	rows: 3, // populated/overridden at runtime
 

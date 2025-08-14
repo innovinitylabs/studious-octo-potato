@@ -101,7 +101,7 @@ const Example = {
     gapX: 6.9, // horizontal gap in pixels
     gapY: 4.2, // vertical gap in pixels (tighter per request)
 	cornerRadiusFrac: 0.14, // of tile min(w,h)
-	strokeWeight: 3.0,
+	strokeWeight: 1.0,
 	barCount: 7, // optional center bars
 	barWidthFrac: 0.012, // of canvas width
 	barSpacingFrac: 0.012,
@@ -120,7 +120,7 @@ const Example = {
 	// Frayed edge parameters
 	frayStep: 2.2, // sampling step along the path (px)
 	frayAmpMin: 0.6,
-	frayAmpMax: 1.8,
+	frayAmpMax: 1.0,
 	frayNoiseFreq: 0.08,
 	frayOutwardBias: 0.7 // probability to bias displacement outward
 };
@@ -550,27 +550,52 @@ function sampleRoundedRect(x, y, w, h, r, step) {
     const k = 0.5523;
     const ox = r * k, oy = r * k;
 
-    // Build four edges as polylines with arcs approximated by Bézier sampling
-    function sampleBezier(ax, ay, bx, by, cx, cy, dx, dy) {
-        const len = max(4, Math.ceil(dist(ax, ay, dx, dy) / step));
-        for (let t = 0; t <= 1.00001; t += 1 / len) {
+    function addPoint(px, py, tangAngle, isArc) {
+        const normalAngle = tangAngle - HALF_PI;
+        pts.push({ x: px, y: py, angle: normalAngle, tang: tangAngle, isArc });
+    }
+
+    function sampleBezier(ax, ay, bx, by, cx, cy, dx, dy, forward = true) {
+        const len = max(6, Math.ceil(dist(ax, ay, dx, dy) / step));
+        const dt = 1 / len;
+        for (let t = 0; t <= 1.00001; t += dt) {
             const x1 = bezierPoint(ax, bx, cx, dx, t);
             const y1 = bezierPoint(ay, by, cy, dy, t);
             const tx = bezierTangent(ax, bx, cx, dx, t);
             const ty = bezierTangent(ay, by, cy, dy, t);
-            const ang = atan2(ty, tx) - HALF_PI; // outward normal
-            pts.push({ x: x1, y: y1, angle: ang });
+            const tangAngle = atan2(ty, tx);
+            addPoint(x1, y1, tangAngle, true);
         }
     }
 
-    // Top edge: TL arc -> straight -> TR arc
-    sampleBezier(x + r, y, x + r - ox, y, x, y + r - oy, x, y + r);
-    // Right edge: TR arc
-    sampleBezier(x, y + r, x, y + h - r + oy, x + r - ox, y + h, x + r, y + h);
-    // Bottom: BR arc
-    sampleBezier(x + r, y + h, x + w - r + ox, y + h, x + w, y + h - r + oy, x + w, y + h - r);
-    // Left: BL arc
-    sampleBezier(x + w, y + h - r, x + w, y + r - oy, x + w - r + ox, y, x + w - r, y);
+    function sampleLine(ax, ay, bx, by) {
+        const length = dist(ax, ay, bx, by);
+        const steps = max(2, Math.ceil(length / step));
+        for (let i = 0; i <= steps; i++) {
+            const t = i / steps;
+            const px = lerp(ax, bx, t);
+            const py = lerp(ay, by, t);
+            const tangAngle = atan2(by - ay, bx - ax);
+            addPoint(px, py, tangAngle, false);
+        }
+    }
+
+    // Top edge: straight from (x+r,y) to (x+w-r,y)
+    sampleLine(x + r, y, x + w - r, y);
+    // Top-right arc
+    sampleBezier(x + w - r, y, x + w - r + ox, y, x + w, y + r - oy, x + w, y + r);
+    // Right edge: straight down
+    sampleLine(x + w, y + r, x + w, y + h - r);
+    // Bottom-right arc
+    sampleBezier(x + w, y + h - r, x + w, y + h - r + oy, x + w - r + ox, y + h, x + w - r, y + h);
+    // Bottom edge: straight left
+    sampleLine(x + w - r, y + h, x + r, y + h);
+    // Bottom-left arc
+    sampleBezier(x + r, y + h, x + r - ox, y + h, x, y + h - r + oy, x, y + h - r);
+    // Left edge: straight up
+    sampleLine(x, y + h - r, x, y + r);
+    // Top-left arc (back to start)
+    sampleBezier(x, y + r, x, y + r - oy, x + r - ox, y, x + r, y);
 
     return pts;
 }
@@ -651,6 +676,29 @@ function renderPaperBackground() {
         const r = random(8, 36);
         fill(255, 255, 255, 8);
         ellipse(x, y, r, r);
+    }
+    // Long soft fibers
+    stroke(255, 255, 255, 12);
+    strokeWeight(0.6);
+    noFill();
+    const fiberCount = 90;
+    for (let f = 0; f < fiberCount; f++) {
+        const y0 = random(height);
+        const len = random(width * 0.35, width * 0.9);
+        const amp = random(6, 18);
+        const freq = random(0.004, 0.012);
+        beginShape();
+        for (let x0 = -50; x0 <= len; x0 += 8) {
+            const x = (width - len) * random() + x0;
+            const y = y0 + sin((x0 + f * 13) * freq) * amp + random(-1, 1);
+            vertex(constrain(x, 0, width), constrain(y, 0, height));
+        }
+        endShape();
+        if (random() < 0.35) {
+            stroke(230, 220, 200, 14);
+        } else {
+            stroke(255, 255, 255, 12);
+        }
     }
     applyPaperTexture();
 }

@@ -1,10 +1,25 @@
 /*
-	The Great Clown — fresh build focused on grid with parabolic intersections.
-	- Portrait canvas, vertical symmetry
-	- Grid lines are bands of parallel straight segments
-	- Only intersections are curved (cubic bezier, parabola-like)
-	- Circles kept; NO central yellow bars
-	- Wash + paper texture overlay
+	The Great Clown — fresh build focused on a gridded composition with
+	parabolic (rounded) junctions.
+
+	What is special here?
+	- Each cell is a single bordered rectangle. The four sides are straight,
+	  but the four corners are replaced by cubic Bézier arcs designed to feel
+	  parabolic. This yields blocky tiles that soften at their junctions.
+	- The grid uses a small number of columns/rows so the blocks read large.
+	  Column widths and row heights are non-uniform to avoid rigid repetition.
+	- The whole left half is drawn and then mirrored to the right with a tiny
+	  registration jitter to keep a hand-pulled print vibe.
+	- Red/pink circular motifs are sprinkled at interior grid intersections,
+	  layered with a subtle wash and a paper texture overlay.
+
+	Parabolic corner model (intuition):
+	- For each corner we choose a radius r and a handle scale k.
+	- We draw a cubic Bézier between the two straight edges. The two control
+	  points are placed along the tangents of each edge at a distance r*k.
+	  For k ≈ 1.5–2 the curve visually approximates a parabola more than a
+	  perfect circular arc, which matches the etched/pressed look of the
+	  reference print.
 
 	Controls: R randomize · S save
 */
@@ -14,6 +29,18 @@
 // ---------------------------------
 // Config
 // ---------------------------------
+/**
+	Core parameters for rendering. Tweak these live while exploring:
+	- cols/rows: coarse grid resolution (left half only; mirrored after)
+	- lineWeight*: stroke thickness range for cell borders
+	- cornerRadius*Frac: min/max corner rounding as a fraction of local cell
+	  size; higher values → rounder junctions
+	- curveK*: scales Bézier handle length relative to radius; larger values
+	  produce a more parabolic, less circular feel
+	- circle*: distribution + sizes of red/pink dots at intersections
+	- symmetryJitter: small sub-pixel registration offset for the mirrored pass
+	- washOpacity/textureOpacity: post effects strength
+*/
 const Config = {
 	canvasWidth: 800,
 	canvasHeight: 1200,
@@ -70,6 +97,8 @@ let paperTextureGfx = null;
 // Setup / Draw
 // ---------------------------------
 function setup() {
+	// Create a portrait canvas and attach it to the DOM container. We render
+	// at device pixel density to keep fine lines crisp.
 	const container = document.getElementById("container");
 	const cnv = createCanvas(Config.canvasWidth, Config.canvasHeight);
 	if (container) cnv.parent(container);
@@ -89,19 +118,20 @@ function draw() {
 		renderParabolicGrid();
 	}, Config.symmetryJitter, Config.symmetryJitter);
 
-	// Pass 2: circles
+	// Pass 2: circles at interior grid nodes
 	drawMirrored(() => {
 		renderCircles();
 	}, Config.symmetryJitter, Config.symmetryJitter);
 
-	// Pass 3: washes
+	// Pass 3: washes (subtle unifying glaze)
 	renderWashes();
 
-	// Pass 4: paper texture
+	// Pass 4: paper texture (multiply overlay)
 	applyPaperTexture();
 }
 
 function regenerate() {
+	// Seed PRNG + Perlin and rebuild all dependent data.
 	randomSeed(seedValue);
 	noiseSeed(seedValue);
 	buildGrid();
@@ -111,6 +141,7 @@ function regenerate() {
 }
 
 function keyPressed() {
+	// Simple UX helpers for fast iteration.
 	if (key === "r" || key === "R") {
 		seedValue = Math.floor(Math.random() * 1e9);
 		regenerate();
@@ -121,11 +152,17 @@ function keyPressed() {
 // ---------------------------------
 // Grid computation
 // ---------------------------------
+/**
+	Compute non-uniform grid coordinates for the left half of the canvas.
+	We start at 0 and accumulate proportional widths/heights so the last
+	coordinate lands exactly at width/2 or height.
+*/
 function buildGrid() {
 	gridX = [0];
 	gridY = [0];
 
-	// Variable column widths
+	// Variable column widths — heavier randomness here produces a mix of
+	// squarer and more elongated cells while still filling the half-canvas.
 	let weightsX = [];
 	for (let i = 0; i < Config.cols; i++) weightsX.push(random(0.9, 1.9));
 	let sumX = weightsX.reduce((a, b) => a + b, 0);
@@ -135,7 +172,7 @@ function buildGrid() {
 		gridX.push(accX);
 	}
 
-	// Variable row heights
+	// Variable row heights — same proportional approach as columns.
 	let weightsY = [];
 	for (let j = 0; j < Config.rows; j++) weightsY.push(random(0.9, 2.1));
 	let sumY = weightsY.reduce((a, b) => a + b, 0);
@@ -147,6 +184,9 @@ function buildGrid() {
 }
 
 function buildCorners() {
+	// For every grid intersection we assign a rounding radius r and a handle
+	// scale k (used later to compute Bézier control points). Intersections on
+	// the outer frame remain sharp (r = 0) so the outer silhouette stays boxy.
 	cornerR = [];
 	cornerK = [];
 	for (let i = 0; i <= Config.cols; i++) {
@@ -174,6 +214,12 @@ function buildCorners() {
 // ---------------------------------
 // Rendering — Parabolic grid
 // ---------------------------------
+/**
+	Draw each cell's border exactly once using four straight segments and
+	four rounded corners. The rounded corners are implemented as cubic Bézier
+	arcs whose handles lie on the tangents of the touching edges. With handle
+	length = radius * k, larger k exaggerates the curvature toward a parabola.
+*/
 function renderParabolicGrid() {
 	stroke(Palette.mutedBlueGray);
 	noFill();
@@ -185,6 +231,7 @@ function renderParabolicGrid() {
 			const yT = gridY[j];
 			const yB = gridY[j + 1];
 
+			// Clamp radii so opposite rounded corners never overlap.
 			const rTL = constrain(cornerR[i][j], 0, 0.5 * min(xR - xL, yB - yT));
 			const rTR = constrain(cornerR[i + 1][j], 0, 0.5 * min(xR - xL, yB - yT));
 			const rBR = constrain(cornerR[i + 1][j + 1], 0, 0.5 * min(xR - xL, yB - yT));
@@ -224,7 +271,7 @@ function renderParabolicGrid() {
 				// Left edge (flat)
 				line(xL2, yB2 - bl, xL2, yT2 + tl);
 
-				// Corners — cubic bezier arcs with parabolic feel
+				// Corners — cubic Bézier arcs with parabolic feel
 				// Top-left (stronger parabola: longer handles)
 				if (tl > 0) {
 					const sx = xL2 + tl, sy = yT2;

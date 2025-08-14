@@ -91,13 +91,19 @@ const Pebble = {
 // Clean grid example controls (for the provided rounded-rect mock)
 const Example = {
 	rows: 3,
+	cols: 4, // final grid columns across whole canvas
 	gutterXFrac: 0.04, // as fraction of canvas width
 	gutterYFrac: 0.06, // as fraction of canvas height
-	cornerRadiusFrac: 0.08, // of tile height
+	cornerRadiusFrac: 0.08, // of tile min(w,h)
 	strokeWeight: 2.0,
 	barCount: 7, // total bars centered at the vertical midline
 	barWidthFrac: 0.012, // of canvas width
-	barSpacingFrac: 0.012
+	barSpacingFrac: 0.012,
+	drawBars: false, // default off per latest request
+	colWidthWeightMin: 0.8, // randomness for non-fixed widths
+	colWidthWeightMax: 1.4,
+	rowHeightWeightMin: 0.8,
+	rowHeightWeightMax: 1.6
 };
 
 // Palette
@@ -393,40 +399,63 @@ function renderPebbleEdgeBands() {
 // Mirrors are not used here; we explicitly draw both sides for clarity.
 // -------------------------------------------------
 function renderRoundedRectExample() {
-	background(255);
-	stroke(20);
-	strokeWeight(Example.strokeWeight);
-	noFill();
+    background(255);
+    stroke(20);
+    strokeWeight(Example.strokeWeight);
+    noFill();
 
-	const rows = Example.rows;
-	const cols = 4; // final layout target
-	const gx = width * Example.gutterXFrac;
-	const gy = height * Example.gutterYFrac;
-	const totalGx = gx * (cols + 1);
-	const totalGy = gy * (rows + 1);
-	const tileW = (width - totalGx) / cols;
-	const tileH = (height - totalGy) / rows;
-	const r = tileH * Example.cornerRadiusFrac;
+    const rows = Example.rows;
+    const cols = Example.cols;
 
-	// Tiles
-	for (let j = 0; j < rows; j++) {
-		for (let i = 0; i < cols; i++) {
-			const x = gx + i * (tileW + gx);
-			const y = gy + j * (tileH + gy);
-			roundedRect(x, y, tileW, tileH, r);
-		}
-	}
+    // Build non-uniform column widths and row heights that still fit the
+    // overall canvas with consistent gutters.
+    const gx = width * Example.gutterXFrac;
+    const gy = height * Example.gutterYFrac;
 
-	// Center bar group
-	const barW = width * Example.barWidthFrac;
-	const barS = width * Example.barSpacingFrac;
-	const totalBarsW = Example.barCount * barW + (Example.barCount - 1) * barS;
-	let startX = (width - totalBarsW) / 2;
-	const barR = tileH * 0.18;
-	for (let i = 0; i < Example.barCount; i++) {
-		roundedRect(startX, gy, barW, height - 2 * gy, barR);
-		startX += barW + barS;
-	}
+    // Column widths by weights
+    let colWeights = [];
+    for (let i = 0; i < cols; i++) colWeights.push(random(Example.colWidthWeightMin, Example.colWidthWeightMax));
+    const sumW = colWeights.reduce((a, b) => a + b, 0);
+    const usableW = width - gx * (cols + 1);
+    let colWidths = colWeights.map(w => (w / sumW) * usableW);
+
+    // Row heights by weights
+    let rowWeights = [];
+    for (let j = 0; j < rows; j++) rowWeights.push(random(Example.rowHeightWeightMin, Example.rowHeightWeightMax));
+    const sumH = rowWeights.reduce((a, b) => a + b, 0);
+    const usableH = height - gy * (rows + 1);
+    let rowHeights = rowWeights.map(h => (h / sumH) * usableH);
+
+    // Precompute x,y origins for each col/row
+    let xs = [gx];
+    for (let i = 0; i < cols - 1; i++) xs.push(xs[xs.length - 1] + colWidths[i] + gx);
+    let ys = [gy];
+    for (let j = 0; j < rows - 1; j++) ys.push(ys[ys.length - 1] + rowHeights[j] + gy);
+
+    // Tiles with per-tile radius based on its min dimension
+    for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+            const x = xs[i];
+            const y = ys[j];
+            const w = colWidths[i];
+            const h = rowHeights[j];
+            const r = min(w, h) * Example.cornerRadiusFrac;
+            roundedRect(x, y, w, h, r);
+        }
+    }
+
+    if (Example.drawBars) {
+        const tileHApprox = usableH / rows;
+        const barW = width * Example.barWidthFrac;
+        const barS = width * Example.barSpacingFrac;
+        const totalBarsW = Example.barCount * barW + (Example.barCount - 1) * barS;
+        let startX = (width - totalBarsW) / 2;
+        const barR = tileHApprox * 0.18;
+        for (let i = 0; i < Example.barCount; i++) {
+            roundedRect(startX, gy, barW, height - 2 * gy, barR);
+            startX += barW + barS;
+        }
+    }
 }
 
 function roundedRect(x, y, w, h, r) {

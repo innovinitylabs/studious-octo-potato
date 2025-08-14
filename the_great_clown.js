@@ -98,10 +98,10 @@ const Example = {
 	cols: 4, // populated/overridden at runtime
 	rows: 3, // populated/overridden at runtime
 
-    gapX: 20, // horizontal gap in pixels
+    gapX: 6.9, // horizontal gap in pixels
     gapY: 4.2, // vertical gap in pixels (tighter per request)
-	cornerRadiusFrac: 0.08, // of tile min(w,h)
-	strokeWeight: 2.0,
+	cornerRadiusFrac: 0.14, // of tile min(w,h)
+	strokeWeight: 3.0,
 	barCount: 7, // optional center bars
 	barWidthFrac: 0.012, // of canvas width
 	barSpacingFrac: 0.012,
@@ -109,7 +109,14 @@ const Example = {
 	colWidthWeightMin: 0.8, // randomness for non-fixed widths
 	colWidthWeightMax: 1.4,
 	rowHeightWeightMin: 0.8,
-	rowHeightWeightMax: 1.6
+	rowHeightWeightMax: 1.6,
+
+	// Watercolor stroke feel
+	wcLayersMin: 6,
+	wcLayersMax: 12,
+	wcJitter: 0.8, // px
+	wcAlphaMin: 30,
+	wcAlphaMax: 110
 };
 
 // Palette
@@ -409,8 +416,6 @@ function renderPebbleEdgeBands() {
 // -------------------------------------------------
 function renderRoundedRectExample() {
     background(255);
-    stroke(20);
-    strokeWeight(Example.strokeWeight);
     noFill();
 
     const rows = Example.rows;
@@ -449,7 +454,7 @@ function renderRoundedRectExample() {
             const w = colWidths[i];
             const h = rowHeights[j];
             const r = min(w, h) * Example.cornerRadiusFrac;
-            roundedRect(x, y, w, h, r);
+            watercolorRoundedRect(x, y, w, h, r);
         }
     }
 
@@ -461,7 +466,7 @@ function renderRoundedRectExample() {
         let startX = (width - totalBarsW) / 2;
         const barR = tileHApprox * 0.18;
         for (let i = 0; i < Example.barCount; i++) {
-            roundedRect(startX, gy, barW, height - 2 * gy, barR);
+            watercolorRoundedRect(startX, gy, barW, height - 2 * gy, barR);
             startX += barW + barS;
         }
     }
@@ -481,6 +486,23 @@ function roundedRect(x, y, w, h, r) {
 	vertex(x + w, y + r);
 	bezierVertex(x + w, y + r - oy, x + w - r + ox, y, x + w - r, y);
 	endShape(CLOSE);
+}
+
+// Watercolor-style multi-layered stroke of a rounded rect using palette hues
+function watercolorRoundedRect(x, y, w, h, r) {
+    const layers = Math.floor(random(Example.wcLayersMin, Example.wcLayersMax + 1));
+    const colors = [Palette.mutedBlueGray, Palette.deepRed];
+    for (let i = 0; i < layers; i++) {
+        const col = random(colors);
+        const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
+        stroke(red(col), green(col), blue(col), a);
+        strokeWeight(Example.strokeWeight + random(-0.6, 0.6));
+        const jitter = Example.wcJitter;
+        push();
+        translate(random(-jitter, jitter), random(-jitter, jitter));
+        roundedRect(x, y, w, h, r);
+        pop();
+    }
 }
 
 // ---------------------------------

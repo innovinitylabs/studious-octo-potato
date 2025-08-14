@@ -44,23 +44,23 @@
 const Config = {
 	canvasWidth: 800,
 	canvasHeight: 1200,
-	cols: 4, // fewer divs → huge blocks
-	rows: 7,
+	cols: 2, // mirrored → 4 across
+	rows: 3,
 
 	// Line bands
 	linesPerBorderMin: 1,
 	linesPerBorderMax: 1,
 	lineSpacingMin: 1.0,
 	lineSpacingMax: 1.0,
-	lineWeightMin: 1.2,
-	lineWeightMax: 2.2,
-	lineAlpha: 120,
+	lineWeightMin: 1.6,
+	lineWeightMax: 1.6,
+	lineAlpha: 255,
 
 	// Intersection rounding (parabolic feel)
-	cornerRadiusMinFrac: 0.12, // of min(cellW, cellH)
-	cornerRadiusMaxFrac: 0.38,
-	curveKMin: 1.2, // handle length factor relative to radius (parabola-like)
-	curveKMax: 2.0,
+	cornerRadiusMinFrac: 0.2, // of min(cellW, cellH)
+	cornerRadiusMaxFrac: 0.2,
+	curveKMin: 0.5523, // handle length ≈ 0.5523 * r gives near-circular arc
+	curveKMax: 0.5523,
 
 	// Circles
 	circleProbability: 0.26,
@@ -179,24 +179,22 @@ function buildGrid() {
 
 	// Variable column widths — heavier randomness here produces a mix of
 	// squarer and more elongated cells while still filling the half-canvas.
-	let weightsX = [];
-	for (let i = 0; i < Config.cols; i++) weightsX.push(random(0.9, 1.9));
-	let sumX = weightsX.reduce((a, b) => a + b, 0);
-	let accX = 0;
-	for (let i = 0; i < Config.cols; i++) {
-		accX += (weightsX[i] / sumX) * (width / 2);
-		gridX.push(accX);
-	}
+    let accX = 0;
+    const gutterX = width * 0.04; // spacing between tiles inside half
+    const tileW = ((width / 2) - gutterX * (Config.cols + 1)) / Config.cols;
+    for (let i = 0; i < Config.cols; i++) {
+        accX += gutterX + tileW;
+        gridX.push(accX);
+    }
 
 	// Variable row heights — same proportional approach as columns.
-	let weightsY = [];
-	for (let j = 0; j < Config.rows; j++) weightsY.push(random(0.9, 2.1));
-	let sumY = weightsY.reduce((a, b) => a + b, 0);
-	let accY = 0;
-	for (let j = 0; j < Config.rows; j++) {
-		accY += (weightsY[j] / sumY) * height;
-		gridY.push(accY);
-	}
+    let accY = 0;
+    const gutterY = height * 0.04;
+    const tileH = (height - gutterY * (Config.rows + 1)) / Config.rows;
+    for (let j = 0; j < Config.rows; j++) {
+        accY += gutterY + tileH;
+        gridY.push(accY);
+    }
 }
 
 function buildCorners() {
@@ -342,7 +340,8 @@ function renderPebbleEdgeBands() {
 			const cellH = yB - yT;
 			const bulgeBase = min(cellW, cellH) * Pebble.bulgeIntensity;
 
-			// Vertical seam on the right side of the cell
+			// Vertical seam on the right side of the cell (skip outermost border)
+			if (i < Config.cols - 1) {
 			const vCount = Math.floor(random(Pebble.vertLinesMin, Pebble.vertLinesMax + 1));
 			const vBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
 			for (let k = 0; k < vCount; k++) {
@@ -362,8 +361,10 @@ function renderPebbleEdgeBands() {
 				}
 				bezier(sx, y1, sx + curve, lerp(y1, midY, 0.66), ex + curve, lerp(midY, y2, 0.66), ex, y2);
 			}
+			}
 
-			// Horizontal seam at the bottom of the cell
+			// Horizontal seam at the bottom of the cell (skip outermost border)
+			if (j < Config.rows - 1) {
 			const hCount = Math.floor(random(Pebble.horzLinesMin, Pebble.horzLinesMax + 1));
 			const hBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
 			for (let k = 0; k < hCount; k++) {
@@ -382,6 +383,7 @@ function renderPebbleEdgeBands() {
 					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Pebble.strokeAlpha);
 				}
 				bezier(x1, sy, lerp(x1, midX, 0.66), sy + curve, lerp(midX, x2, 0.66), ey + curve, x2, ey);
+			}
 			}
 		}
 	}

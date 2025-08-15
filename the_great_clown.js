@@ -464,6 +464,9 @@ function renderRoundedRectExample() {
         }
     }
 
+    // Loose gut lines between boxes
+    renderGutLines(xs, ys, colWidths, rowHeights);
+
     if (Example.drawBars) {
         const tileHApprox = usableH / rows;
     const barW = width * Example.barWidthFrac;
@@ -597,6 +600,68 @@ function sampleRoundedRect(x, y, w, h, r, step) {
     sampleBezier(x, y + r, x, y + r - oy, x + r - ox, y, x + r, y);
 
     return pts;
+}
+
+// ---------------------------------
+// Gut lines between boxes
+// ---------------------------------
+function renderGutLines(xs, ys, colWidths, rowHeights) {
+    const rows = Example.rows;
+    const cols = Example.cols;
+    const gx = Example.gapX;
+    const gy = Example.gapY;
+
+    // Vertical gut lines (between columns)
+    for (let i = 1; i < cols; i++) {
+        const x = xs[i] - gx * 0.5;
+        const lineCount = Math.floor(random(3, 8));
+        for (let l = 0; l < lineCount; l++) {
+            const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+            const alpha = random(40, 90);
+            stroke(red(col), green(col), blue(col), alpha);
+            strokeWeight(random(0.8, 2.2));
+            
+            const y1 = gy;
+            const y2 = height - gy;
+            const xOff = random(-gx * 0.3, gx * 0.3);
+            const segments = Math.floor(random(2, 5));
+            
+            beginShape();
+            for (let s = 0; s <= segments; s++) {
+                const t = s / segments;
+                const y = lerp(y1, y2, t);
+                const xPos = x + xOff + random(-1.5, 1.5);
+                vertex(xPos, y);
+            }
+            endShape();
+        }
+    }
+
+    // Horizontal gut lines (between rows)
+    for (let j = 1; j < rows; j++) {
+        const y = ys[j] - gy * 0.5;
+        const lineCount = Math.floor(random(2, 6));
+        for (let l = 0; l < lineCount; l++) {
+            const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+            const alpha = random(35, 85);
+            stroke(red(col), green(col), blue(col), alpha);
+            strokeWeight(random(0.7, 1.8));
+            
+            const x1 = gx;
+            const x2 = width - gx;
+            const yOff = random(-gy * 0.4, gy * 0.4);
+            const segments = Math.floor(random(2, 4));
+            
+            beginShape();
+            for (let s = 0; s <= segments; s++) {
+                const t = s / segments;
+                const x = lerp(x1, x2, t);
+                const yPos = y + yOff + random(-1.2, 1.2);
+                vertex(x, yPos);
+            }
+            endShape();
+        }
+    }
 }
 
 // ---------------------------------

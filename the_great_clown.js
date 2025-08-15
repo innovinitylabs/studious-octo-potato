@@ -422,7 +422,6 @@ function renderPebbleEdgeBands() {
 // Mirrors are not used here; we explicitly draw both sides for clarity.
 // -------------------------------------------------
 function renderRoundedRectExample() {
-    background(255);
     noFill();
 
     const rows = Example.rows;

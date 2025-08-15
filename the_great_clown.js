@@ -90,6 +90,11 @@ const Pebble = {
 
 // Clean grid example controls (for the provided rounded-rect mock)
 const Example = {
+	// Library integration flags
+	useP5Brush: true,
+	useP5Bezier: true,
+	useP5CMYK: true,
+	useP5Anaglyph: false, // for future multi-color effects
 	// Dynamic rows/cols — chosen on regenerate() between these min/max values
 	minCols: 6,
 	maxCols: 10,
@@ -158,6 +163,18 @@ function setup() {
 	pixelDensity(2);
 	smooth();
 
+	// Initialize p5.brush if enabled
+	if (Example.useP5Brush && typeof brush !== 'undefined') {
+		brush.setup();
+		brush.stroke("black", 50);
+		brush.fill("black", 50);
+	}
+
+	// Initialize p5.cmyk if enabled
+	if (Example.useP5CMYK && typeof cmyk !== 'undefined') {
+		cmyk.setup();
+	}
+
 	Palette = Object.fromEntries(Object.entries(RawPalette).map(([k, rgb]) => [k, color(...rgb)]));
 	regenerate();
 }
@@ -168,6 +185,11 @@ function draw() {
 
 	// For the example view: clean rounded-rect tiles + center bar stack
 	renderRoundedRectExample();
+
+	// Apply CMYK conversion for print-ready output if enabled
+	if (Example.useP5CMYK && typeof cmyk !== 'undefined') {
+		cmyk.convert();
+	}
 }
 
 function regenerate() {
@@ -519,30 +541,48 @@ function watercolorRoundedRectFrayed(x, y, w, h, r) {
     const layers = Math.floor(random(Example.wcLayersMin, Example.wcLayersMax + 1));
     const colors = [Palette.mutedBlueGray, Palette.deepRed];
 
-    // Build the clean outline as a list of points along the rounded rect
-    const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
-
-    for (let i = 0; i < layers; i++) {
-        const col = random(colors);
-        const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
-        stroke(red(col), green(col), blue(col), a);
-        strokeWeight(Example.strokeWeight + random(-0.7, 0.7));
-
-        // Displace each point outward-ish with noise to create fray
-        const amp = random(Example.frayAmpMin, Example.frayAmpMax);
-        beginShape();
-        for (let p = 0; p < outline.length; p++) {
-            const pt = outline[p];
-            const nx = cos(pt.angle);
-            const ny = sin(pt.angle);
-            const outward = random() < Example.frayOutwardBias ? 1 : -1;
-            const n = noise(pt.x * Example.frayNoiseFreq + i * 10.0, pt.y * Example.frayNoiseFreq + i * 17.0);
-            const d = (n - 0.5) * 2 * amp * outward;
-            const jx = random(-Example.wcJitter, Example.wcJitter);
-            const jy = random(-Example.wcJitter, Example.wcJitter);
-            vertex(pt.x + nx * d + jx, pt.y + ny * d + jy);
+    // Use p5.brush for natural brush strokes if available
+    if (Example.useP5Brush && typeof brush !== 'undefined') {
+        for (let i = 0; i < layers; i++) {
+            const col = random(colors);
+            const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
+            
+            // Convert p5 color to brush color
+            const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
+            brush.stroke(brushColor, a);
+            brush.fill(brushColor, a);
+            
+            // Create a polygon from the rounded rect and fill it
+            const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
+            const points = outline.map(pt => [pt.x, pt.y]);
+            const polygon = new brush.Polygon(points);
+            polygon.fill(brushColor, a, 0.1, "noise");
         }
-        endShape(CLOSE);
+    } else {
+        // Fallback to original method
+        const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
+        for (let i = 0; i < layers; i++) {
+            const col = random(colors);
+            const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
+            stroke(red(col), green(col), blue(col), a);
+            strokeWeight(Example.strokeWeight + random(-0.7, 0.7));
+
+            // Displace each point outward-ish with noise to create fray
+            const amp = random(Example.frayAmpMin, Example.frayAmpMax);
+            beginShape();
+            for (let p = 0; p < outline.length; p++) {
+                const pt = outline[p];
+                const nx = cos(pt.angle);
+                const ny = sin(pt.angle);
+                const outward = random() < Example.frayOutwardBias ? 1 : -1;
+                const n = noise(pt.x * Example.frayNoiseFreq + i * 10.0, pt.y * Example.frayNoiseFreq + i * 17.0);
+                const d = (n - 0.5) * 2 * amp * outward;
+                const jx = random(-Example.wcJitter, Example.wcJitter);
+                const jy = random(-Example.wcJitter, Example.wcJitter);
+                vertex(pt.x + nx * d + jx, pt.y + ny * d + jy);
+            }
+            endShape(CLOSE);
+        }
     }
 }
 
@@ -611,55 +651,119 @@ function renderGutLines(xs, ys, colWidths, rowHeights) {
     const gx = Example.gapX;
     const gy = Example.gapY;
 
-    // Vertical gut lines (between columns)
-    for (let i = 1; i < cols; i++) {
-        const x = xs[i] - gx * 0.5;
-        const lineCount = Math.floor(random(3, 8));
-        for (let l = 0; l < lineCount; l++) {
-            const col = random([Palette.mutedBlueGray, Palette.deepRed]);
-            const alpha = random(40, 90);
-            stroke(red(col), green(col), blue(col), alpha);
-            strokeWeight(random(0.8, 2.2));
-            
-            const y1 = gy;
-            const y2 = height - gy;
-            const xOff = random(-gx * 0.3, gx * 0.3);
-            const segments = Math.floor(random(2, 5));
-            
-            beginShape();
-            for (let s = 0; s <= segments; s++) {
-                const t = s / segments;
-                const y = lerp(y1, y2, t);
-                const xPos = x + xOff + random(-1.5, 1.5);
-                vertex(xPos, y);
+    // Use p5.brush for natural brush strokes if available
+    if (Example.useP5Brush && typeof brush !== 'undefined') {
+        // Vertical gut lines (between columns)
+        for (let i = 1; i < cols; i++) {
+            const x = xs[i] - gx * 0.5;
+            const lineCount = Math.floor(random(3, 8));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(40, 90);
+                const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
+                brush.stroke(brushColor, alpha);
+                
+                const y1 = gy;
+                const y2 = height - gy;
+                const xOff = random(-gx * 0.3, gx * 0.3);
+                const segments = Math.floor(random(2, 5));
+                
+                // Create a plot for the brush stroke
+                const plot = new brush.Plot("curve");
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const y = lerp(y1, y2, t);
+                    const xPos = x + xOff + random(-1.5, 1.5);
+                    const angle = random(-PI/6, PI/6);
+                    const length = random(5, 15);
+                    const pressure = random(0.3, 0.8);
+                    plot.addSegment(angle, length, pressure);
+                }
+                plot.draw(x, y);
             }
-            endShape();
         }
-    }
 
-    // Horizontal gut lines (between rows)
-    for (let j = 1; j < rows; j++) {
-        const y = ys[j] - gy * 0.5;
-        const lineCount = Math.floor(random(2, 6));
-        for (let l = 0; l < lineCount; l++) {
-            const col = random([Palette.mutedBlueGray, Palette.deepRed]);
-            const alpha = random(35, 85);
-            stroke(red(col), green(col), blue(col), alpha);
-            strokeWeight(random(0.7, 1.8));
-            
-            const x1 = gx;
-            const x2 = width - gx;
-            const yOff = random(-gy * 0.4, gy * 0.4);
-            const segments = Math.floor(random(2, 4));
-            
-            beginShape();
-            for (let s = 0; s <= segments; s++) {
-                const t = s / segments;
-                const x = lerp(x1, x2, t);
-                const yPos = y + yOff + random(-1.2, 1.2);
-                vertex(x, yPos);
+        // Horizontal gut lines (between rows)
+        for (let j = 1; j < rows; j++) {
+            const y = ys[j] - gy * 0.5;
+            const lineCount = Math.floor(random(2, 6));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(35, 85);
+                const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
+                brush.stroke(brushColor, alpha);
+                
+                const x1 = gx;
+                const x2 = width - gx;
+                const yOff = random(-gy * 0.4, gy * 0.4);
+                const segments = Math.floor(random(2, 4));
+                
+                // Create a plot for the brush stroke
+                const plot = new brush.Plot("curve");
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const x = lerp(x1, x2, t);
+                    const yPos = y + yOff + random(-1.2, 1.2);
+                    const angle = random(-PI/6, PI/6);
+                    const length = random(4, 12);
+                    const pressure = random(0.3, 0.7);
+                    plot.addSegment(angle, length, pressure);
+                }
+                plot.draw(x, y);
             }
-            endShape();
+        }
+    } else {
+        // Fallback to original method
+        // Vertical gut lines (between columns)
+        for (let i = 1; i < cols; i++) {
+            const x = xs[i] - gx * 0.5;
+            const lineCount = Math.floor(random(3, 8));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(40, 90);
+                stroke(red(col), green(col), blue(col), alpha);
+                strokeWeight(random(0.8, 2.2));
+                
+                const y1 = gy;
+                const y2 = height - gy;
+                const xOff = random(-gx * 0.3, gx * 0.3);
+                const segments = Math.floor(random(2, 5));
+                
+                beginShape();
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const y = lerp(y1, y2, t);
+                    const xPos = x + xOff + random(-1.5, 1.5);
+                    vertex(xPos, y);
+                }
+                endShape();
+            }
+        }
+
+        // Horizontal gut lines (between rows)
+        for (let j = 1; j < rows; j++) {
+            const y = ys[j] - gy * 0.5;
+            const lineCount = Math.floor(random(2, 6));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(35, 85);
+                stroke(red(col), green(col), blue(col), alpha);
+                strokeWeight(random(0.7, 1.8));
+                
+                const x1 = gx;
+                const x2 = width - gx;
+                const yOff = random(-gy * 0.4, gy * 0.4);
+                const segments = Math.floor(random(2, 4));
+                
+                beginShape();
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const x = lerp(x1, x2, t);
+                    const yPos = y + yOff + random(-1.2, 1.2);
+                    vertex(x, yPos);
+                }
+                endShape();
+            }
         }
     }
 }

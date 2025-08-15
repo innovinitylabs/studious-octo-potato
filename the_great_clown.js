@@ -91,15 +91,15 @@ const Pebble = {
 // Clean grid example controls (for the provided rounded-rect mock)
 const Example = {
 	// Library integration flags
-	useP5Brush: true,
+	useP5Brush: true, // Custom brush effects enabled
 	useP5Bezier: true,
 	useP5CMYK: true,
 	useP5Anaglyph: false, // for future multi-color effects
 	// Dynamic rows/cols — chosen on regenerate() between these min/max values
-	minCols: 6,
-	maxCols: 10,
-	minRows: 4,
-	maxRows: 8,
+	minCols: 20,
+	maxCols: 30,
+	minRows: 30,
+	maxRows: 50,
 	cols: 4, // populated/overridden at runtime
 	rows: 3, // populated/overridden at runtime
 
@@ -127,7 +127,45 @@ const Example = {
 	frayAmpMin: 0.6,
 	frayAmpMax: 1.0,
 	frayNoiseFreq: 0.08,
-	frayOutwardBias: 0.7 // probability to bias displacement outward
+	frayOutwardBias: 0.7, // probability to bias displacement outward
+	
+	// Enhanced Brush System Configuration
+	useP5Brush: true, // Enable enhanced brush effects
+	brushPressureVariation: 0.3, // Pressure variation in brush strokes
+	brushFieldInfluence: 0.5, // How much vector fields influence strokes
+	brushVibration: 0.8, // Vibration/jitter in brush strokes
+	brushQuality: 4, // Quality of brush stroke subdivision
+	brushStrokeCount: 3, // Number of overlapping strokes per brush stroke
+	
+	// Natural Media Effects
+	naturalMediaBleedStrength: 0.15, // Bleeding strength for natural media fills
+	naturalMediaTextureStrength: 0.4, // Texture strength for fills
+	naturalMediaBorderStrength: 0.4, // Border strength for fills
+	naturalMediaLayers: 5, // Number of layers for depth
+	
+	// Watercolor Effects
+	watercolorBleedStrength: 0.2, // Bleeding strength for watercolor effects
+	watercolorTextureStrength: 0.6, // Texture strength for watercolor
+	watercolorLayers: 8, // Number of watercolor layers
+	
+	// Hatching Configuration
+	hatchingDistance: 8, // Distance between hatching lines
+	hatchingAngle: Math.PI / 4, // Base angle for hatching
+	hatchingOpacity: 0.1, // Opacity of hatching lines
+	hatchingVariation: 0.2, // Angle variation in hatching
+	
+	// Vector Field Configuration
+	enableVectorFields: false, // Enable vector field influence
+	vectorFieldScale: 0.01, // Scale of noise-based vector fields
+	vectorFieldStrength: 30, // Strength of vector field influence
+	
+	// Compression System Configuration
+	enableCompression: true, // Enable grid compression towards focal point
+	compressionStrengthMin: 0.95, // Minimum compression strength (0-1) - extremely strong
+	compressionStrengthMax: 0.99, // Maximum compression strength (0-1) - almost complete
+	compressionRadiusMin: 0.4, // Minimum compression radius (fraction of canvas) - reasonable size
+	compressionRadiusMax: 0.6, // Maximum compression radius (fraction of canvas) - reasonable size
+	compressionFalloff: 2.0, // Sharp falloff for dramatic effect
 };
 
 // Palette
@@ -141,6 +179,280 @@ const RawPalette = {
 let Palette = {};
 
 // ---------------------------------
+// Enhanced Brush System (inspired by p5.brush)
+// ---------------------------------
+
+// Brush pressure simulation
+const BrushPressure = {
+    // Pressure curve simulation
+    curve: [0.15, 0.2], // [start, end] pressure factors
+    min_max: [1.2, 0.9], // [min, max] pressure range
+    
+    // Calculate pressure based on stroke progress
+    calculate: function(progress, length) {
+        const t = progress / length;
+        const pressureCurve = this.curve[0] + (this.curve[1] - this.curve[0]) * t;
+        const pressure = map(pressureCurve, 0, 1, this.min_max[0], this.min_max[1]);
+        return constrain(pressure, this.min_max[1], this.min_max[0]);
+    },
+    
+    // Gaussian pressure variation
+    gaussian: function(progress, length, variation = 0.3) {
+        const basePressure = this.calculate(progress, length);
+        const gaussianVariation = randomGaussian(0, variation);
+        return constrain(basePressure + gaussianVariation, this.min_max[1], this.min_max[0]);
+    }
+};
+
+// Vector field system for organic movement
+const VectorField = {
+    isActive: false,
+    field: null,
+    resolution: 50,
+    
+    // Create a noise-based vector field
+    createNoiseField: function(scale = 0.01, strength = 30) {
+        this.isActive = true;
+        this.field = function(x, y) {
+            const angle = noise(x * scale, y * scale) * TWO_PI;
+            return angle * strength;
+        };
+    },
+    
+    // Create a circular field
+    createCircularField: function(centerX, centerY, strength = 30) {
+        this.isActive = true;
+        this.field = function(x, y) {
+            const dx = x - centerX;
+            const dy = y - centerY;
+            return atan2(dy, dx) * strength;
+        };
+    },
+    
+    // Get field angle at position
+    getAngle: function(x, y) {
+        if (!this.isActive || !this.field) return 0;
+        return this.field(x, y);
+    },
+    
+    // Disable vector field
+    disable: function() {
+        this.isActive = false;
+        this.field = null;
+    }
+};
+
+// Enhanced brush stroke with pressure and field integration
+function enhancedBrushStroke(x1, y1, x2, y2, color, baseAlpha, baseWeight, options = {}) {
+    const {
+        pressureVariation = Example.brushPressureVariation,
+        fieldInfluence = Example.brushFieldInfluence,
+        strokeCount = Example.brushStrokeCount,
+        vibration = Example.brushVibration,
+        quality = Example.brushQuality
+    } = options;
+    
+    const length = dist(x1, y1, x2, y2);
+    const baseAngle = atan2(y2 - y1, x2 - x1);
+    
+    for (let i = 0; i < strokeCount; i++) {
+        // Calculate pressure for this stroke
+        const progress = (i / strokeCount) * length;
+        const pressure = BrushPressure.gaussian(progress, length, pressureVariation);
+        
+        // Apply vector field influence
+        let finalAngle = baseAngle;
+        if (VectorField.isActive) {
+            const midX = (x1 + x2) / 2;
+            const midY = (y1 + y2) / 2;
+            const fieldAngle = VectorField.getAngle(midX, midY);
+            finalAngle = lerp(baseAngle, fieldAngle, fieldInfluence);
+        }
+        
+        // Add vibration and jitter
+        const vibrationOffset = random(-vibration, vibration);
+        const perpAngle = finalAngle + HALF_PI;
+        const offsetX = cos(perpAngle) * vibrationOffset;
+        const offsetY = sin(perpAngle) * vibrationOffset;
+        
+        // Vary alpha and weight based on pressure
+        const alpha = baseAlpha * pressure * random(0.7, 1.3);
+        const weight = baseWeight * pressure * random(0.8, 1.2);
+        
+        // Add jitter to endpoints
+        const jitterX1 = random(-1, 1);
+        const jitterY1 = random(-1, 1);
+        const jitterX2 = random(-1, 1);
+        const jitterY2 = random(-1, 1);
+        
+        // Draw the stroke with quality-based subdivision
+        const segments = Math.ceil(length / quality);
+        for (let s = 0; s < segments; s++) {
+            const t1 = s / segments;
+            const t2 = (s + 1) / segments;
+            
+            const px1 = lerp(x1, x2, t1) + offsetX + jitterX1;
+            const py1 = lerp(y1, y2, t1) + offsetY + jitterY1;
+            const px2 = lerp(x1, x2, t2) + offsetX + jitterX2;
+            const py2 = lerp(y1, y2, t2) + offsetY + jitterY2;
+            
+            stroke(red(color), green(color), blue(color), alpha);
+            strokeWeight(weight);
+            line(px1, py1, px2, py2);
+        }
+    }
+}
+
+// Natural media fill with bleeding and texture
+function naturalMediaFill(points, color, baseAlpha, options = {}) {
+    const {
+        bleedStrength = 0.15,
+        textureStrength = 0.4,
+        borderStrength = 0.4,
+        layers = 5
+    } = options;
+    
+    // Create multiple layers for depth
+    for (let layer = 0; layer < layers; layer++) {
+        const layerAlpha = baseAlpha * (1 - layer * 0.2);
+        const layerBleed = bleedStrength * (1 + layer * 0.3);
+        
+        // Create jittered polygon for natural edge
+        const jitteredPoints = points.map(pt => {
+            const jitterX = random(-layerBleed * 10, layerBleed * 10);
+            const jitterY = random(-layerBleed * 10, layerBleed * 10);
+            return [pt[0] + jitterX, pt[1] + jitterY];
+        });
+        
+        // Fill with texture variation
+        fill(red(color), green(color), blue(color), layerAlpha);
+        noStroke();
+        
+        beginShape();
+        for (let pt of jitteredPoints) {
+            vertex(pt[0], pt[1]);
+        }
+        endShape(CLOSE);
+        
+        // Add border texture
+        if (layer === 0 && borderStrength > 0) {
+            stroke(red(color), green(color), blue(color), layerAlpha * borderStrength);
+            strokeWeight(1);
+            noFill();
+            
+            beginShape();
+            for (let pt of jitteredPoints) {
+                vertex(pt[0], pt[1]);
+            }
+            endShape(CLOSE);
+        }
+    }
+}
+
+// Hatching system for texture
+function createHatching(points, color, baseAlpha, options = {}) {
+    const {
+        distance = 8,
+        angle = Math.PI / 4,
+        opacity = 0.3,
+        variation = 0.2
+    } = options;
+    
+    // Calculate bounding box
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    
+    for (let pt of points) {
+        minX = min(minX, pt[0]);
+        maxX = max(maxX, pt[0]);
+        minY = min(minY, pt[1]);
+        maxY = max(maxY, pt[1]);
+    }
+    
+    // Create hatching lines
+    const hatchCount = Math.ceil((maxX - minX + maxY - minY) / distance);
+    
+    for (let i = 0; i < hatchCount; i++) {
+        const offset = i * distance;
+        const hatchAngle = angle + random(-variation, variation);
+        
+        // Calculate hatch line endpoints
+        const cosA = cos(hatchAngle);
+        const sinA = sin(hatchAngle);
+        
+        let x1, y1, x2, y2;
+        
+        if (abs(cosA) > abs(sinA)) {
+            // Horizontal hatching
+            x1 = minX + offset;
+            y1 = minY;
+            x2 = minX + offset;
+            y2 = maxY;
+        } else {
+            // Vertical hatching
+            x1 = minX;
+            y1 = minY + offset;
+            x2 = maxX;
+            y2 = minY + offset;
+        }
+        
+        // Draw hatch line with brush effect
+        enhancedBrushStroke(x1, y1, x2, y2, color, baseAlpha * opacity, 0.5, {
+            strokeCount: 1,
+            vibration: 0.3
+        });
+    }
+}
+
+// Watercolor effect with bleeding
+function watercolorEffect(points, color, baseAlpha, options = {}) {
+    const {
+        bleedStrength = 0.2,
+        textureStrength = 0.6,
+        layers = 8
+    } = options;
+    
+    // Create multiple bleeding layers
+    for (let layer = 0; layer < layers; layer++) {
+        const layerAlpha = baseAlpha * (1 - layer * 0.1);
+        const layerBleed = bleedStrength * (1 + layer * 0.5);
+        
+        // Create expanded polygon for bleeding effect
+        const expandedPoints = [];
+        for (let i = 0; i < points.length; i++) {
+            const pt = points[i];
+            const nextPt = points[(i + 1) % points.length];
+            
+            // Calculate outward normal
+            const dx = nextPt[0] - pt[0];
+            const dy = nextPt[1] - pt[1];
+            const length = sqrt(dx * dx + dy * dy);
+            
+            if (length > 0) {
+                const nx = -dy / length;
+                const ny = dx / length;
+                
+                const bleedDistance = layerBleed * random(5, 15);
+                expandedPoints.push([
+                    pt[0] + nx * bleedDistance,
+                    pt[1] + ny * bleedDistance
+                ]);
+            }
+        }
+        
+        // Fill with watercolor texture
+        fill(red(color), green(color), blue(color), layerAlpha);
+        noStroke();
+        
+        beginShape();
+        for (let pt of expandedPoints) {
+            vertex(pt[0], pt[1]);
+        }
+        endShape(CLOSE);
+    }
+}
+
+// ---------------------------------
 // State
 // ---------------------------------
 let gridX = [];
@@ -149,6 +461,11 @@ let cornerR = []; // [i][j]
 let cornerK = []; // [i][j]
 let seedValue = Math.floor(Math.random() * 1e9);
 let paperTextureGfx = null;
+
+// Compression focal point system
+let compressionCenter = { x: 0, y: 0 };
+let compressionStrength = 0.0;
+let compressionRadius = 0.0;
 
 // ---------------------------------
 // Setup / Draw
@@ -163,13 +480,6 @@ function setup() {
 	pixelDensity(2);
 	smooth();
 
-	// Initialize p5.brush if enabled
-	if (Example.useP5Brush && typeof brush !== 'undefined') {
-		brush.setup();
-		brush.stroke("black", 50);
-		brush.fill("black", 50);
-	}
-
 	// Initialize p5.cmyk if enabled
 	if (Example.useP5CMYK && typeof cmyk !== 'undefined') {
 		cmyk.setup();
@@ -177,19 +487,57 @@ function setup() {
 
 	Palette = Object.fromEntries(Object.entries(RawPalette).map(([k, rgb]) => [k, color(...rgb)]));
 	regenerate();
+
+	// Initialize vector field system if enabled
+	if (Example.enableVectorFields) {
+		VectorField.createNoiseField(Example.vectorFieldScale, Example.vectorFieldStrength);
+	}
 }
 
 function draw() {
     // Paper background first, then ink
     renderPaperBackground();
 
-	// For the example view: clean rounded-rect tiles + center bar stack
-	renderRoundedRectExample();
+    // Draw compression visualization (background)
+    drawCompressionVisualization();
 
-	// Apply CMYK conversion for print-ready output if enabled
-	if (Example.useP5CMYK && typeof cmyk !== 'undefined') {
-		cmyk.convert();
-	}
+    // For the example view: clean rounded-rect tiles + center bar stack
+    renderRoundedRectExample();
+
+    // Use enhanced brush effects for natural brush strokes
+    if (Example.useP5Brush) {
+        // Add some additional subtle brush texture overlays
+        const overlayCount = Math.floor(random(2, 5));
+        for (let i = 0; i < overlayCount; i++) {
+            const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+            const alpha = random(10, 30);
+            
+            // Create organic texture strokes
+            const strokeCount = Math.floor(random(3, 8));
+            for (let s = 0; s < strokeCount; s++) {
+                const startX = random(width);
+                const startY = random(height);
+                const strokeLength = random(15, 40);
+                const angle = random(TWO_PI);
+                const endX = startX + cos(angle) * strokeLength;
+                const endY = startY + sin(angle) * strokeLength;
+                
+                enhancedBrushStroke(startX, startY, endX, endY, col, alpha, random(0.3, 0.8), {
+                    strokeCount: 1,
+                    vibration: 0.9,
+                    quality: 2
+                });
+            }
+        }
+    }
+
+    // Draw compression focal point (for debugging - can be disabled)
+    drawCompressionFocalPoint();
+
+    // Apply CMYK conversion for print-ready output if enabled
+    if (Example.useP5CMYK && typeof cmyk !== 'undefined') {
+        cmyk.convert();
+    }
 }
 
 function regenerate() {
@@ -199,6 +547,14 @@ function regenerate() {
 	// Choose dynamic grid size each regeneration
 	Example.cols = Math.floor(random(Example.minCols, Example.maxCols + 1));
 	Example.rows = Math.floor(random(Example.minRows, Example.maxRows + 1));
+	
+	// Update Config with the new grid size
+	Config.cols = Example.cols;
+	Config.rows = Example.rows;
+	
+	// Initialize compression system (now with correct grid size)
+	initializeCompression();
+	
 	buildGrid();
 	buildCorners();
 	buildPaperTexture();
@@ -226,23 +582,51 @@ function buildGrid() {
 	gridX = [0];
 	gridY = [0];
 
+	console.log("=== GRID BUILD DEBUG ===");
+	console.log("Config.cols:", Config.cols, "Config.rows:", Config.rows);
+	console.log("Canvas width:", width, "Canvas height:", height);
+
 	// Variable column widths — heavier randomness here produces a mix of
-	// squarer and more elongated cells while still filling the half-canvas.
+	// squarer and more elongated cells while still filling the full canvas.
     let accX = 0;
-    const gutterX = width * 0.04; // spacing between tiles inside half
-    const tileW = ((width / 2) - gutterX * (Config.cols + 1)) / Config.cols;
+    const gutterX = width * 0.02; // Reduced gutter for more tiles
+    const tileW = (width - gutterX * (Config.cols + 1)) / Config.cols;
+    console.log("Gutter X:", gutterX, "Tile W:", tileW);
+    
     for (let i = 0; i < Config.cols; i++) {
         accX += gutterX + tileW;
         gridX.push(accX);
     }
+    
+    // Ensure the last grid line reaches the canvas edge
+    if (gridX[gridX.length - 1] < width) {
+        gridX[gridX.length - 1] = width;
+    }
 
 	// Variable row heights — same proportional approach as columns.
     let accY = 0;
-    const gutterY = height * 0.04;
+    const gutterY = height * 0.02; // Reduced gutter for more tiles
     const tileH = (height - gutterY * (Config.rows + 1)) / Config.rows;
+    console.log("Gutter Y:", gutterY, "Tile H:", tileH);
+    
     for (let j = 0; j < Config.rows; j++) {
         accY += gutterY + tileH;
         gridY.push(accY);
+    }
+    
+    // Ensure the last grid line reaches the canvas edge
+    if (gridY[gridY.length - 1] < height) {
+        gridY[gridY.length - 1] = height;
+    }
+    
+    console.log("Grid built - X positions:", gridX.length, "Y positions:", gridY.length);
+    console.log("Grid X range:", gridX[0], "to", gridX[gridX.length-1]);
+    console.log("Grid Y range:", gridY[0], "to", gridY[gridY.length-1]);
+    console.log("=== END GRID BUILD DEBUG ===");
+    
+    // Apply compression to the grid if enabled
+    if (Example.enableCompression) {
+        applyCompressionToGrid();
     }
 }
 
@@ -284,7 +668,13 @@ function buildCorners() {
 	length = radius * k, larger k exaggerates the curvature toward a parabola.
 */
 function renderParabolicGrid() {
-	stroke(Palette.mutedBlueGray);
+	// Use enhanced brush effects for natural brush strokes
+	if (Example.useP5Brush) {
+		// Custom brush stroke setup
+		noFill();
+	} else {
+		stroke(Palette.mutedBlueGray);
+	}
 	noFill();
 
 	for (let i = 0; i < Config.cols; i++) {
@@ -322,50 +712,178 @@ function renderParabolicGrid() {
 				const br = max(rBR - o, 0);
 				const bl = max(rBL - o, 0);
 
-				strokeWeight(random(Config.lineWeightMin, Config.lineWeightMax));
-				stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Config.lineAlpha + random(-24, 24));
+				if (Example.useP5Brush) {
+					// Use enhanced brush strokes for natural media effect
+					const alpha = Config.lineAlpha + random(-24, 24);
+					const weight = random(Config.lineWeightMin, Config.lineWeightMax);
+					
+					// Draw edges with enhanced brush strokes
+					// Top edge
+					enhancedBrushStroke(xL2 + tl, yT2, xR2 - tr, yT2, Palette.mutedBlueGray, alpha, weight, {
+						strokeCount: 2,
+						vibration: 0.4,
+						quality: 4
+					});
+					// Right edge
+					enhancedBrushStroke(xR2, yT2 + tr, xR2, yB2 - br, Palette.mutedBlueGray, alpha, weight, {
+						strokeCount: 2,
+						vibration: 0.4,
+						quality: 4
+					});
+					// Bottom edge
+					enhancedBrushStroke(xR2 - br, yB2, xL2 + bl, yB2, Palette.mutedBlueGray, alpha, weight, {
+						strokeCount: 2,
+						vibration: 0.4,
+						quality: 4
+					});
+					// Left edge
+					enhancedBrushStroke(xL2, yB2 - bl, xL2, yT2 + tl, Palette.mutedBlueGray, alpha, weight, {
+						strokeCount: 2,
+						vibration: 0.4,
+						quality: 4
+					});
 
-				// Top edge (flat)
-				line(xL2 + tl, yT2, xR2 - tr, yT2);
-				// Right edge (flat)
-				line(xR2, yT2 + tr, xR2, yB2 - br);
-				// Bottom edge (flat)
-				line(xR2 - br, yB2, xL2 + bl, yB2);
-				// Left edge (flat)
-				line(xL2, yB2 - bl, xL2, yT2 + tl);
+					// Corners — use enhanced brush curves for rounded corners
+					// Top-left
+					if (tl > 0) {
+						const sx = xL2 + tl, sy = yT2;
+						const ex = xL2, ey = yT2 + tl;
+						const c1x = sx - tl * kTL, c1y = sy;
+						const c2x = ex, c2y = ey - tl * kTL;
+						
+						// Draw curved corner with multiple brush strokes
+						const cornerSegments = Math.floor(random(4, 8));
+						for (let s = 0; s < cornerSegments; s++) {
+							const t = s / cornerSegments;
+							const px = bezierPoint(sx, c1x, c2x, ex, t);
+							const py = bezierPoint(sy, c1y, c2y, ey, t);
+							const nextT = (s + 1) / cornerSegments;
+							const px2 = bezierPoint(sx, c1x, c2x, ex, nextT);
+							const py2 = bezierPoint(sy, c1y, c2y, ey, nextT);
+							
+							enhancedBrushStroke(px, py, px2, py2, Palette.mutedBlueGray, alpha, weight, {
+								strokeCount: 1,
+								vibration: 0.3,
+								quality: 3
+							});
+						}
+					}
+					// Top-right
+					if (tr > 0) {
+						const sx = xR2 - tr, sy = yT2;
+						const ex = xR2, ey = yT2 + tr;
+						const c1x = sx + tr * kTR, c1y = sy;
+						const c2x = ex, c2y = ey - tr * kTR;
+						
+						const cornerSegments = Math.floor(random(4, 8));
+						for (let s = 0; s < cornerSegments; s++) {
+							const t = s / cornerSegments;
+							const px = bezierPoint(sx, c1x, c2x, ex, t);
+							const py = bezierPoint(sy, c1y, c2y, ey, t);
+							const nextT = (s + 1) / cornerSegments;
+							const px2 = bezierPoint(sx, c1x, c2x, ex, nextT);
+							const py2 = bezierPoint(sy, c1y, c2y, ey, nextT);
+							
+							enhancedBrushStroke(px, py, px2, py2, Palette.mutedBlueGray, alpha, weight, {
+								strokeCount: 1,
+								vibration: 0.3,
+								quality: 3
+							});
+						}
+					}
+					// Bottom-right
+					if (br > 0) {
+						const sx = xR2, sy = yB2 - br;
+						const ex = xR2 - br, ey = yB2;
+						const c1x = sx, c1y = sy + br * kBR;
+						const c2x = ex + br * kBR, c2y = ey;
+						
+						const cornerSegments = Math.floor(random(4, 8));
+						for (let s = 0; s < cornerSegments; s++) {
+							const t = s / cornerSegments;
+							const px = bezierPoint(sx, c1x, c2x, ex, t);
+							const py = bezierPoint(sy, c1y, c2y, ey, t);
+							const nextT = (s + 1) / cornerSegments;
+							const px2 = bezierPoint(sx, c1x, c2x, ex, nextT);
+							const py2 = bezierPoint(sy, c1y, c2y, ey, nextT);
+							
+							enhancedBrushStroke(px, py, px2, py2, Palette.mutedBlueGray, alpha, weight, {
+								strokeCount: 1,
+								vibration: 0.3,
+								quality: 3
+							});
+						}
+					}
+					// Bottom-left
+					if (bl > 0) {
+						const sx = xL2 + bl, sy = yB2;
+						const ex = xL2, ey = yB2 - bl;
+						const c1x = sx - bl * kBL, c1y = sy;
+						const c2x = ex, c2y = ey + bl * kBL;
+						
+						const cornerSegments = Math.floor(random(4, 8));
+						for (let s = 0; s < cornerSegments; s++) {
+							const t = s / cornerSegments;
+							const px = bezierPoint(sx, c1x, c2x, ex, t);
+							const py = bezierPoint(sy, c1y, c2y, ey, t);
+							const nextT = (s + 1) / cornerSegments;
+							const px2 = bezierPoint(sx, c1x, c2x, ex, nextT);
+							const py2 = bezierPoint(sy, c1y, c2y, ey, nextT);
+							
+							enhancedBrushStroke(px, py, px2, py2, Palette.mutedBlueGray, alpha, weight, {
+								strokeCount: 1,
+								vibration: 0.3,
+								quality: 3
+							});
+						}
+					}
+				} else {
+					// Fallback to original method
+					strokeWeight(random(Config.lineWeightMin, Config.lineWeightMax));
+					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Config.lineAlpha + random(-24, 24));
 
-				// Corners — cubic Bézier arcs with parabolic feel
-				// Top-left (stronger parabola: longer handles)
-				if (tl > 0) {
-					const sx = xL2 + tl, sy = yT2;
-					const ex = xL2, ey = yT2 + tl;
-					const c1x = sx - tl * kTL, c1y = sy;
-					const c2x = ex, c2y = ey - tl * kTL;
-					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
-				}
-				// Top-right
-				if (tr > 0) {
-					const sx = xR2 - tr, sy = yT2;
-					const ex = xR2, ey = yT2 + tr;
-					const c1x = sx + tr * kTR, c1y = sy;
-					const c2x = ex, c2y = ey - tr * kTR;
-					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
-				}
-				// Bottom-right
-				if (br > 0) {
-					const sx = xR2, sy = yB2 - br;
-					const ex = xR2 - br, ey = yB2;
-					const c1x = sx, c1y = sy + br * kBR;
-					const c2x = ex + br * kBR, c2y = ey;
-					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
-				}
-				// Bottom-left
-				if (bl > 0) {
-					const sx = xL2 + bl, sy = yB2;
-					const ex = xL2, ey = yB2 - bl;
-					const c1x = sx - bl * kBL, c1y = sy;
-					const c2x = ex, c2y = ey + bl * kBL;
-					bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+					// Top edge (flat)
+					line(xL2 + tl, yT2, xR2 - tr, yT2);
+					// Right edge (flat)
+					line(xR2, yT2 + tr, xR2, yB2 - br);
+					// Bottom edge (flat)
+					line(xR2 - br, yB2, xL2 + bl, yB2);
+					// Left edge (flat)
+					line(xL2, yB2 - bl, xL2, yT2 + tl);
+
+					// Corners — cubic Bézier arcs with parabolic feel
+					// Top-left (stronger parabola: longer handles)
+					if (tl > 0) {
+						const sx = xL2 + tl, sy = yT2;
+						const ex = xL2, ey = yT2 + tl;
+						const c1x = sx - tl * kTL, c1y = sy;
+						const c2x = ex, c2y = ey - tl * kTL;
+						bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+					}
+					// Top-right
+					if (tr > 0) {
+						const sx = xR2 - tr, sy = yT2;
+						const ex = xR2, ey = yT2 + tr;
+						const c1x = sx + tr * kTR, c1y = sy;
+						const c2x = ex, c2y = ey - tr * kTR;
+						bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+					}
+					// Bottom-right
+					if (br > 0) {
+						const sx = xR2, sy = yB2 - br;
+						const ex = xR2 - br, ey = yB2;
+						const c1x = sx, c1y = sy + br * kBR;
+						const c2x = ex + br * kBR, c2y = ey;
+						bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+					}
+					// Bottom-left
+					if (bl > 0) {
+						const sx = xL2 + bl, sy = yB2;
+						const ex = xL2, ey = yB2 - bl;
+						const c1x = sx - bl * kBL, c1y = sy;
+						const c2x = ex, c2y = ey + bl * kBL;
+						bezier(sx, sy, c1x, c1y, c2x, c2y, ex, ey);
+					}
 				}
 			}
 		}
@@ -377,65 +895,134 @@ function renderParabolicGrid() {
 // Gives the marbled/ink-pulled feel in the reference crop
 // -------------------------------------------------
 function renderPebbleEdgeBands() {
-	noFill();
-	for (let i = 0; i < Config.cols; i++) {
-		for (let j = 0; j < Config.rows; j++) {
-			const xL = gridX[i];
-			const xR = gridX[i + 1];
-			const yT = gridY[j];
-			const yB = gridY[j + 1];
+    const rows = Example.rows;
+    const cols = Example.cols;
+    const gx = Example.gapX;
+    const gy = Example.gapY;
 
-			const cellW = xR - xL;
-			const cellH = yB - yT;
-			const bulgeBase = min(cellW, cellH) * Pebble.bulgeIntensity;
+    // Use enhanced brush effects for natural brush strokes
+    if (Example.useP5Brush) {
+        // Vertical pebble lines (between columns)
+        for (let i = 1; i < cols; i++) {
+            const x = gridX[i] - gx * 0.5;
+            const lineCount = Math.floor(random(2, 5));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(30, 75);
+                
+                const y1 = gy;
+                const y2 = height - gy;
+                const xOff = random(-gx * 0.4, gx * 0.4);
+                
+                // Create organic pebble-like strokes
+                const segments = Math.floor(random(4, 8));
+                for (let s = 0; s < segments; s++) {
+                    const t = s / segments;
+                    const y = lerp(y1, y2, t);
+                    const xPos = x + xOff + random(-3, 3);
+                    
+                    // Create pebble-like curves
+                    const strokeLength = random(10, 25);
+                    const curveAngle = random(-PI/6, PI/6);
+                    const endX = xPos + cos(curveAngle) * strokeLength;
+                    const endY = y + sin(curveAngle) * strokeLength;
+                    
+                    enhancedBrushStroke(xPos, y, endX, endY, col, alpha * random(0.6, 1.0), random(0.6, 1.8), {
+                        strokeCount: 2,
+                        vibration: 0.7,
+                        quality: 3
+                    });
+                }
+            }
+        }
 
-			// Vertical seam on the right side of the cell (skip outermost border)
-			if (i < Config.cols - 1) {
-			const vCount = Math.floor(random(Pebble.vertLinesMin, Pebble.vertLinesMax + 1));
-			const vBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
-			for (let k = 0; k < vCount; k++) {
-				const centerT = vCount <= 1 ? 0 : map(k, 0, vCount - 1, -0.5, 0.5);
-				const off = centerT * vBand + randomGaussian(0, 0.35);
-				const sx = xR - off;
-				const ex = xR - off;
-				const y1 = yT;
-				const y2 = yB;
-				const midY = (y1 + y2) * 0.5;
-				const curve = bulgeBase * random(0.7, 1.3);
-				strokeWeight(random(Pebble.weightMin, Pebble.weightMax));
-				if (random() < Pebble.redInkChance) {
-					stroke(red(Palette.deepRed), green(Palette.deepRed), blue(Palette.deepRed), Pebble.strokeAlpha);
-				} else {
-					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Pebble.strokeAlpha);
-				}
-				bezier(sx, y1, sx + curve, lerp(y1, midY, 0.66), ex + curve, lerp(midY, y2, 0.66), ex, y2);
-			}
-			}
+        // Horizontal pebble lines (between rows)
+        for (let j = 1; j < rows; j++) {
+            const y = gridY[j] - gy * 0.5;
+            const lineCount = Math.floor(random(1, 4));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(25, 70);
+                
+                const x1 = gx;
+                const x2 = width - gx;
+                const yOff = random(-gy * 0.5, gy * 0.5);
+                
+                // Create organic pebble-like strokes
+                const segments = Math.floor(random(3, 6));
+                for (let s = 0; s < segments; s++) {
+                    const t = s / segments;
+                    const x = lerp(x1, x2, t);
+                    const yPos = y + yOff + random(-2, 2);
+                    
+                    // Create pebble-like curves
+                    const strokeLength = random(8, 20);
+                    const curveAngle = random(-PI/6, PI/6);
+                    const endX = x + cos(curveAngle) * strokeLength;
+                    const endY = yPos + sin(curveAngle) * strokeLength;
+                    
+                    enhancedBrushStroke(x, yPos, endX, endY, col, alpha * random(0.6, 1.0), random(0.5, 1.5), {
+                        strokeCount: 2,
+                        vibration: 0.6,
+                        quality: 3
+                    });
+                }
+            }
+        }
+    } else {
+        // Fallback to original method
+        // Vertical pebble lines (between columns)
+        for (let i = 1; i < cols; i++) {
+            const x = gridX[i] - gx * 0.5;
+            const lineCount = Math.floor(random(2, 5));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(30, 75);
+                stroke(red(col), green(col), blue(col), alpha);
+                strokeWeight(random(0.6, 1.8));
+                
+                const y1 = gy;
+                const y2 = height - gy;
+                const xOff = random(-gx * 0.4, gx * 0.4);
+                const segments = Math.floor(random(2, 4));
+                
+                beginShape();
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const y = lerp(y1, y2, t);
+                    const xPos = x + xOff + random(-2, 2);
+                    vertex(xPos, y);
+                }
+                endShape();
+            }
+        }
 
-			// Horizontal seam at the bottom of the cell (skip outermost border)
-			if (j < Config.rows - 1) {
-			const hCount = Math.floor(random(Pebble.horzLinesMin, Pebble.horzLinesMax + 1));
-			const hBand = random(Pebble.bandWidthMin, Pebble.bandWidthMax);
-			for (let k = 0; k < hCount; k++) {
-				const centerT = hCount <= 1 ? 0 : map(k, 0, hCount - 1, -0.5, 0.5);
-				const off = centerT * hBand + randomGaussian(0, 0.35);
-				const sy = yB - off;
-				const ey = yB - off;
-				const x1 = xL;
-				const x2 = xR;
-				const midX = (x1 + x2) * 0.5;
-				const curve = bulgeBase * random(0.7, 1.3);
-				strokeWeight(random(Pebble.weightMin, Pebble.weightMax));
-				if (random() < Pebble.redInkChance) {
-					stroke(red(Palette.deepRed), green(Palette.deepRed), blue(Palette.deepRed), Pebble.strokeAlpha);
-				} else {
-					stroke(red(Palette.mutedBlueGray), green(Palette.mutedBlueGray), blue(Palette.mutedBlueGray), Pebble.strokeAlpha);
-				}
-				bezier(x1, sy, lerp(x1, midX, 0.66), sy + curve, lerp(midX, x2, 0.66), ey + curve, x2, ey);
-			}
-			}
-		}
-	}
+        // Horizontal pebble lines (between rows)
+        for (let j = 1; j < rows; j++) {
+            const y = gridY[j] - gy * 0.5;
+            const lineCount = Math.floor(random(1, 4));
+            for (let l = 0; l < lineCount; l++) {
+                const col = random([Palette.mutedBlueGray, Palette.deepRed]);
+                const alpha = random(25, 70);
+                stroke(red(col), green(col), blue(col), alpha);
+                strokeWeight(random(0.5, 1.5));
+                
+                const x1 = gx;
+                const x2 = width - gx;
+                const yOff = random(-gy * 0.5, gy * 0.5);
+                const segments = Math.floor(random(2, 3));
+                
+                beginShape();
+                for (let s = 0; s <= segments; s++) {
+                    const t = s / segments;
+                    const x = lerp(x1, x2, t);
+                    const yPos = y + yOff + random(-1.5, 1.5);
+                    vertex(x, yPos);
+                }
+                endShape();
+            }
+        }
+    }
 }
 
 // -------------------------------------------------
@@ -449,30 +1036,20 @@ function renderRoundedRectExample() {
     const rows = Example.rows;
     const cols = Example.cols;
 
-    // Build non-uniform column widths and row heights that still fit the
-    // overall canvas with consistent gutters.
-    const gx = Example.gapX;
-    const gy = Example.gapY;
+    // Use the compressed grid positions instead of creating new ones
+    const xs = gridX;
+    const ys = gridY;
 
-    // Column widths by weights
-    let colWeights = [];
-    for (let i = 0; i < cols; i++) colWeights.push(random(Example.colWidthWeightMin, Example.colWidthWeightMax));
-    const sumW = colWeights.reduce((a, b) => a + b, 0);
-    const usableW = width - gx * (cols + 1);
-    let colWidths = colWeights.map(w => (w / sumW) * usableW);
+    // Calculate widths and heights from the compressed grid positions
+    let colWidths = [];
+    for (let i = 0; i < cols; i++) {
+        colWidths.push(xs[i + 1] - xs[i]);
+    }
 
-    // Row heights by weights
-    let rowWeights = [];
-    for (let j = 0; j < rows; j++) rowWeights.push(random(Example.rowHeightWeightMin, Example.rowHeightWeightMax));
-    const sumH = rowWeights.reduce((a, b) => a + b, 0);
-    const usableH = height - gy * (rows + 1);
-    let rowHeights = rowWeights.map(h => (h / sumH) * usableH);
-
-    // Precompute x,y origins for each col/row
-    let xs = [gx];
-    for (let i = 0; i < cols - 1; i++) xs.push(xs[xs.length - 1] + colWidths[i] + gx);
-    let ys = [gy];
-    for (let j = 0; j < rows - 1; j++) ys.push(ys[ys.length - 1] + rowHeights[j] + gy);
+    let rowHeights = [];
+    for (let j = 0; j < rows; j++) {
+        rowHeights.push(ys[j + 1] - ys[j]);
+    }
 
     // Tiles with per-tile radius based on its min dimension
     for (let j = 0; j < rows; j++) {
@@ -541,22 +1118,73 @@ function watercolorRoundedRectFrayed(x, y, w, h, r) {
     const layers = Math.floor(random(Example.wcLayersMin, Example.wcLayersMax + 1));
     const colors = [Palette.mutedBlueGray, Palette.deepRed];
 
-    // Use p5.brush for natural brush strokes if available
-    if (Example.useP5Brush && typeof brush !== 'undefined') {
+    // Use enhanced brush effects for natural brush strokes
+    if (Example.useP5Brush) {
         for (let i = 0; i < layers; i++) {
             const col = random(colors);
             const a = random(Example.wcAlphaMin, Example.wcAlphaMax);
             
-            // Convert p5 color to brush color
-            const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
-            brush.stroke(brushColor, a);
-            brush.fill(brushColor, a);
-            
-            // Create a polygon from the rounded rect and fill it
+            // Create a polygon from the rounded rect and fill it with natural texture
             const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
             const points = outline.map(pt => [pt.x, pt.y]);
-            const polygon = new brush.Polygon(points);
-            polygon.fill(brushColor, a, 0.1, "noise");
+            
+            // Use enhanced natural media fill
+            naturalMediaFill(points, col, a, {
+                bleedStrength: Example.naturalMediaBleedStrength,
+                textureStrength: Example.naturalMediaTextureStrength,
+                borderStrength: Example.naturalMediaBorderStrength,
+                layers: Example.naturalMediaLayers
+            });
+            
+            // Add some hatching for additional texture
+            if (random() < 0.4) {
+                createHatching(points, col, a * Example.hatchingOpacity, {
+                    distance: Example.hatchingDistance,
+                    angle: Example.hatchingAngle,
+                    opacity: Example.hatchingOpacity,
+                    variation: Example.hatchingVariation
+                });
+            }
+        }
+        
+        // Add watercolor bleeding effect
+        const watercolorLayers = Math.floor(random(2, 4));
+        for (let i = 0; i < watercolorLayers; i++) {
+            const col = random(colors);
+            const a = random(15, 45);
+            
+            const outline = sampleRoundedRect(x, y, w, h, r, Example.frayStep);
+            const points = outline.map(pt => [pt.x, pt.y]);
+            
+            watercolorEffect(points, col, a, {
+                bleedStrength: Example.watercolorBleedStrength,
+                textureStrength: Example.watercolorTextureStrength,
+                layers: Example.watercolorLayers
+            });
+        }
+        
+        // Add some additional brush strokes around the edges for more texture
+        const edgeStrokes = Math.floor(random(3, 7));
+        for (let i = 0; i < edgeStrokes; i++) {
+            const col = random(colors);
+            const a = random(20, 60);
+            
+            // Create organic edge strokes
+            const strokeCount = Math.floor(random(4, 8));
+            for (let s = 0; s < strokeCount; s++) {
+                const strokeLength = random(12, 28);
+                const angle = random(-PI/6, PI/6);
+                const startX = x + random(-8, w + 8);
+                const startY = y + random(-8, h + 8);
+                const endX = startX + cos(angle) * strokeLength;
+                const endY = startY + sin(angle) * strokeLength;
+                
+                enhancedBrushStroke(startX, startY, endX, endY, col, a * random(0.6, 1.0), random(0.4, 1.2), {
+                    strokeCount: 1,
+                    vibration: 0.8,
+                    quality: 4
+                });
+            }
         }
     } else {
         // Fallback to original method
@@ -651,8 +1279,8 @@ function renderGutLines(xs, ys, colWidths, rowHeights) {
     const gx = Example.gapX;
     const gy = Example.gapY;
 
-    // Use p5.brush for natural brush strokes if available
-    if (Example.useP5Brush && typeof brush !== 'undefined') {
+    // Use enhanced brush effects for natural brush strokes
+    if (Example.useP5Brush) {
         // Vertical gut lines (between columns)
         for (let i = 1; i < cols; i++) {
             const x = xs[i] - gx * 0.5;
@@ -660,26 +1288,30 @@ function renderGutLines(xs, ys, colWidths, rowHeights) {
             for (let l = 0; l < lineCount; l++) {
                 const col = random([Palette.mutedBlueGray, Palette.deepRed]);
                 const alpha = random(40, 90);
-                const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
-                brush.stroke(brushColor, alpha);
                 
                 const y1 = gy;
                 const y2 = height - gy;
                 const xOff = random(-gx * 0.3, gx * 0.3);
-                const segments = Math.floor(random(2, 5));
                 
-                // Create a plot for the brush stroke
-                const plot = new brush.Plot("curve");
-                for (let s = 0; s <= segments; s++) {
+                // Create enhanced brush strokes
+                const segments = Math.floor(random(3, 6));
+                for (let s = 0; s < segments; s++) {
                     const t = s / segments;
                     const y = lerp(y1, y2, t);
-                    const xPos = x + xOff + random(-1.5, 1.5);
-                    const angle = random(-PI/6, PI/6);
-                    const length = random(5, 15);
-                    const pressure = random(0.3, 0.8);
-                    plot.addSegment(angle, length, pressure);
+                    const xPos = x + xOff + random(-2, 2);
+                    
+                    // Draw enhanced brush stroke
+                    const strokeLength = random(8, 20);
+                    const angle = random(-PI/8, PI/8);
+                    const endX = xPos + cos(angle) * strokeLength;
+                    const endY = y + sin(angle) * strokeLength;
+                    
+                    enhancedBrushStroke(xPos, y, endX, endY, col, alpha * random(0.7, 1.0), random(0.8, 2.2), {
+                        strokeCount: 2,
+                        vibration: 0.6,
+                        quality: 3
+                    });
                 }
-                plot.draw(x, y);
             }
         }
 
@@ -690,26 +1322,30 @@ function renderGutLines(xs, ys, colWidths, rowHeights) {
             for (let l = 0; l < lineCount; l++) {
                 const col = random([Palette.mutedBlueGray, Palette.deepRed]);
                 const alpha = random(35, 85);
-                const brushColor = `rgb(${red(col)}, ${green(col)}, ${blue(col)})`;
-                brush.stroke(brushColor, alpha);
                 
                 const x1 = gx;
                 const x2 = width - gx;
                 const yOff = random(-gy * 0.4, gy * 0.4);
-                const segments = Math.floor(random(2, 4));
                 
-                // Create a plot for the brush stroke
-                const plot = new brush.Plot("curve");
-                for (let s = 0; s <= segments; s++) {
+                // Create enhanced brush strokes
+                const segments = Math.floor(random(2, 5));
+                for (let s = 0; s < segments; s++) {
                     const t = s / segments;
                     const x = lerp(x1, x2, t);
-                    const yPos = y + yOff + random(-1.2, 1.2);
-                    const angle = random(-PI/6, PI/6);
-                    const length = random(4, 12);
-                    const pressure = random(0.3, 0.7);
-                    plot.addSegment(angle, length, pressure);
+                    const yPos = y + yOff + random(-1.5, 1.5);
+                    
+                    // Draw enhanced brush stroke
+                    const strokeLength = random(6, 16);
+                    const angle = random(-PI/8, PI/8);
+                    const endX = x + cos(angle) * strokeLength;
+                    const endY = yPos + sin(angle) * strokeLength;
+                    
+                    enhancedBrushStroke(x, yPos, endX, endY, col, alpha * random(0.7, 1.0), random(0.7, 1.8), {
+                        strokeCount: 2,
+                        vibration: 0.5,
+                        quality: 3
+                    });
                 }
-                plot.draw(x, y);
             }
         }
     } else {
@@ -900,4 +1536,197 @@ function drawMirrored(fn, jitterX = 0, jitterY = 0) {
 	fn();
 	pop();
 }
+
+// ---------------------------------
+// Compression System
+// ---------------------------------
+
+// Initialize compression focal point
+function initializeCompression() {
+    if (!Example.enableCompression) {
+        compressionStrength = 0.0;
+        compressionRadius = 0.0;
+        return;
+    }
+    
+    // Choose a random focal point in the core area (avoiding edges)
+    // Note: Grid covers the full canvas width
+    const margin = 0.15; // Keep focal point away from edges
+    
+    // Calculate the actual grid bounds (grid might not cover full canvas)
+    const gridWidth = width; // Full canvas width
+    const gridHeight = height; // Full canvas height
+    
+    compressionCenter.x = random(
+        gridWidth * margin, 
+        gridWidth * (1 - margin)
+    );
+    compressionCenter.y = random(
+        gridHeight * margin, 
+        gridHeight * (1 - margin)
+    );
+    
+    console.log("Grid bounds - Width:", gridWidth, "Height:", gridHeight);
+    console.log("Focal point chosen at:", compressionCenter.x, compressionCenter.y);
+    
+    // Set compression parameters
+    compressionStrength = random(
+        Example.compressionStrengthMin, 
+        Example.compressionStrengthMax
+    );
+    compressionRadius = random(
+        Example.compressionRadiusMin, 
+        Example.compressionRadiusMax
+    ) * min(Config.canvasWidth, Config.canvasHeight);
+}
+
+// Calculate compression factor for a given position
+function getCompressionFactor(x, y) {
+    if (compressionStrength === 0.0) return 1.0;
+    
+    const distance = dist(x, y, compressionCenter.x, compressionCenter.y);
+    const normalizedDistance = distance / compressionRadius;
+    
+    if (normalizedDistance >= 1.0) return 1.0;
+    
+    // Create large core compression area (20-25% of canvas)
+    const coreRadius = 0.25; // 25% of compression radius = large core area
+    
+    if (normalizedDistance <= coreRadius) {
+        // Inside core area: lines are pushed away (strong compression)
+        return 0.001;
+    } else {
+        // Outside core area: gradual return to normal spacing
+        const adjustedDistance = (normalizedDistance - coreRadius) / (1.0 - coreRadius);
+        const falloff = pow(1.0 - adjustedDistance, Example.compressionFalloff);
+        const compressionFactor = 0.001 + (0.999 * falloff);
+        return constrain(compressionFactor, 0.001, 1.0);
+    }
+}
+
+// Apply compression to grid positions
+function applyCompressionToGrid() {
+    if (!Example.enableCompression || compressionStrength === 0.0) return;
+    
+    console.log("=== COMPRESSION DEBUG ===");
+    console.log("Focal point:", compressionCenter.x, compressionCenter.y);
+    console.log("Compression radius:", compressionRadius);
+    console.log("Original gridX:", [...gridX]);
+    console.log("Original gridY:", [...gridY]);
+    
+    // Create compressed grid arrays
+    const compressedGridX = [];
+    const compressedGridY = [];
+    
+    // Apply dramatic compression to horizontal grid lines (X positions)
+    for (let i = 0; i < gridX.length; i++) {
+        const originalX = gridX[i];
+        // Calculate compression factor based on distance from focal point
+        const compressionFactor = getCompressionFactor(originalX, compressionCenter.y);
+        
+        // Create dramatic compression: lines move away from focal point
+        // compressionFactor = 0.001 means lines are pushed away from focal point
+        // compressionFactor = 1.0 means lines stay at original position
+        const direction = originalX > compressionCenter.x ? 1 : -1;
+        const distance = abs(originalX - compressionCenter.x);
+        const compressedX = originalX + direction * distance * (1.0 - compressionFactor);
+        compressedGridX.push(compressedX);
+        
+        console.log(`X line ${i}: ${originalX.toFixed(1)} -> ${compressedX.toFixed(1)} (factor: ${compressionFactor.toFixed(3)})`);
+    }
+    
+    // Apply dramatic compression to vertical grid lines (Y positions)
+    for (let j = 0; j < gridY.length; j++) {
+        const originalY = gridY[j];
+        // Calculate compression factor based on distance from focal point
+        const compressionFactor = getCompressionFactor(compressionCenter.x, originalY);
+        
+        // Create dramatic compression: lines move away from focal point
+        const direction = originalY > compressionCenter.y ? 1 : -1;
+        const distance = abs(originalY - compressionCenter.y);
+        const compressedY = originalY + direction * distance * (1.0 - compressionFactor);
+        compressedGridY.push(compressedY);
+        
+        console.log(`Y line ${j}: ${originalY.toFixed(1)} -> ${compressedY.toFixed(1)} (factor: ${compressionFactor.toFixed(3)})`);
+    }
+    
+    // Apply the compressed values
+    gridX = compressedGridX;
+    gridY = compressedGridY;
+    
+    console.log("Compressed gridX:", [...gridX]);
+    console.log("Compressed gridY:", [...gridY]);
+    console.log("=== END COMPRESSION DEBUG ===");
+}
+
+// Visualize compression focal point (for debugging)
+function drawCompressionFocalPoint() {
+    if (!Example.enableCompression || compressionStrength === 0.0) return;
+    
+    push();
+    noFill();
+    
+    // Draw dramatic compression boundary
+    stroke(255, 0, 0, 150);
+    strokeWeight(3);
+    circle(compressionCenter.x, compressionCenter.y, compressionRadius * 2);
+    
+    // Draw large core compression area (25% of compression radius)
+    stroke(255, 255, 0, 150);
+    strokeWeight(6);
+    const coreRadius = compressionRadius * 0.25;
+    circle(compressionCenter.x, compressionCenter.y, coreRadius * 2);
+    
+    // Draw focal point center
+    stroke(255, 255, 0, 255);
+    strokeWeight(4);
+    circle(compressionCenter.x, compressionCenter.y, 15);
+    
+    // Draw compression intensity gradient
+    for (let r = 0; r < compressionRadius; r += 10) {
+        const normalizedR = r / compressionRadius;
+        const alpha = 100 * (1.0 - normalizedR);
+        stroke(255, 0, 0, alpha);
+        strokeWeight(1);
+        circle(compressionCenter.x, compressionCenter.y, r * 2);
+    }
+    
+    pop();
+}
+
+// Visualize compression effect on grid cells
+function drawCompressionVisualization() {
+    if (!Example.enableCompression || compressionStrength === 0.0) return;
+    
+    push();
+    noStroke();
+    
+    // Draw compressed grid cells with color intensity based on compression
+    for (let i = 0; i < Config.cols; i++) {
+        for (let j = 0; j < Config.rows; j++) {
+            const xL = gridX[i];
+            const xR = gridX[i + 1];
+            const yT = gridY[j];
+            const yB = gridY[j + 1];
+            
+            // Calculate center of this cell
+            const cellCenterX = (xL + xR) / 2;
+            const cellCenterY = (yT + yB) / 2;
+            
+            // Get compression factor for this cell
+            const compressionFactor = getCompressionFactor(cellCenterX, cellCenterY);
+            
+            // Color intensity based on compression (more compressed = more red)
+            const intensity = (1.0 - compressionFactor) * 255;
+            fill(255, 0, 0, intensity * 0.3); // Semi-transparent red
+            
+            // Draw cell background
+            rect(xL, yT, xR - xL, yB - yT);
+        }
+    }
+    
+    pop();
+}
+
+
 

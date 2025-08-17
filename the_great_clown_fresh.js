@@ -51,16 +51,10 @@ class PRNG {
 const Config = {
     // ===== COMPRESSION DENSITY SETTINGS (EASY TO EDIT) =====
     compressionRadius: 800,        // How far the compression effect reaches (pixels) - BIGGER = larger compression area
-    compressionStrength: 69,       // How strong the compression is (multiplier) - BIGGER = more dramatic compression
+    compressionStrength: 50,       // How strong the compression is (multiplier) - BIGGER = more dramatic compression
     
-    // ===== MULTI-STEP COMPRESSION FALLOFF =====
-    // Multiple falloff zones for dynamic compression patterns
-    compressionFalloffZones: [
-        { radius: 0.1, falloff: 6.9 },    // Inner zone (0-10% of radius) - sharp falloff
-        { radius: 0.3, falloff: 3.0 },    // Middle zone (10-30% of radius) - medium falloff
-        { radius: 0.6, falloff: 1.5 },    // Outer zone (30-60% of radius) - gentle falloff
-        { radius: 1.0, falloff: 0.8 }     // Edge zone (60-100% of radius) - very gentle falloff
-    ],
+    // ===== COMPRESSION FALLOFF =====
+    compressionFalloff: 2.0,              // How quickly compression fades from center (smoothness) - BIGGER = sharper transition, SMALLER = smoother fade
     
     horizontalDensityMultiplier: 8, // How many additional horizontal lines to add - BIGGER = more compressed rectangles horizontally
     verticalDensityMultiplier: 16,  // How many additional vertical lines to add - BIGGER = more compressed rectangles vertically
@@ -445,42 +439,15 @@ function applyCompressionToGrid() {
 }
 
 // ============================================================================
-// GET COMPRESSION FACTOR - Calculate compression based on multi-zone falloff
+// GET COMPRESSION FACTOR - Calculate compression based on distance from focal point
 // ============================================================================
-// This function calculates compression factor using multiple falloff zones
-// for more dynamic and complex compression patterns
+// This function calculates compression factor using simple falloff
 function getCompressionFactor(distance) {
     const normalizedDistance = distance / Config.compressionRadius;
     if (normalizedDistance >= 1.0) return 0.0;
     
-    // Find which falloff zone this distance belongs to
-    let currentZone = null;
-    let nextZone = null;
-    
-    for (let i = 0; i < Config.compressionFalloffZones.length - 1; i++) {
-        const zone = Config.compressionFalloffZones[i];
-        const nextZoneData = Config.compressionFalloffZones[i + 1];
-        
-        if (normalizedDistance >= zone.radius && normalizedDistance < nextZoneData.radius) {
-            currentZone = zone;
-            nextZone = nextZoneData;
-            break;
-        }
-    }
-    
-    // If we're in the last zone or no zone found, use the last zone
-    if (!currentZone) {
-        currentZone = Config.compressionFalloffZones[Config.compressionFalloffZones.length - 1];
-        nextZone = currentZone;
-    }
-    
-    // Calculate local normalized distance within this zone (0 to 1)
-    const zoneStart = currentZone.radius;
-    const zoneEnd = nextZone.radius;
-    const localDistance = (normalizedDistance - zoneStart) / (zoneEnd - zoneStart);
-    
-    // Apply the zone's falloff curve
-    const falloff = pow(1.0 - localDistance, currentZone.falloff);
+    // Create smooth falloff from center - maximum compression at center
+    const falloff = pow(1.0 - normalizedDistance, Config.compressionFalloff);
     
     // Scale the factor to create moderate compression
     return falloff * 0.4; // 0.4 = 40% compression at center

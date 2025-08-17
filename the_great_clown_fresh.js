@@ -50,20 +50,20 @@ class PRNG {
 // ============================================================================
 const Config = {
     // ===== COMPRESSION DENSITY SETTINGS (EASY TO EDIT) =====
-    compressionRadius: 400,        // How far the compression effect reaches (pixels)
-    compressionStrength: 50,       // How strong the compression is (multiplier)
-    compressionFalloff: 0.8,       // How quickly compression fades from center (smoothness)
-    horizontalDensityMultiplier: 8, // How many additional horizontal lines to add (was 4)
-    verticalDensityMultiplier: 12,  // How many additional vertical lines to add (was 4)
+    compressionRadius: 200,        // How far the compression effect reaches (pixels) - BIGGER = larger compression area
+    compressionStrength: 50,       // How strong the compression is (multiplier) - BIGGER = more dramatic compression
+    compressionFalloff: 2,         // How quickly compression fades from center (smoothness) - BIGGER = sharper transition, SMALLER = smoother fade
+    horizontalDensityMultiplier: 8, // How many additional horizontal lines to add - BIGGER = more compressed rectangles horizontally
+    verticalDensityMultiplier: 12,  // How many additional vertical lines to add - BIGGER = more compressed rectangles vertically
     
     // ===== GRID STRUCTURE =====
-    gridCols: 8,                   // Number of columns in the base grid
-    gridRows: 8,                   // Number of rows in the base grid
+    gridCols: 8,                   // Number of columns in the base grid - BIGGER = more columns, smaller rectangles
+    gridRows: 8,                   // Number of rows in the base grid - BIGGER = more rows, smaller rectangles
     
     // ===== SPACING BETWEEN RECTANGLES =====
-    minGap: 8,                     // Minimum gap between rectangles (pixels)
-    maxGap: 11,                    // Maximum gap between rectangles (pixels)
-    gapRatio: 0.06,                // Gap as percentage of cell size (6% = moderate spacing)
+    minGap: 8,                     // Minimum gap between rectangles (pixels) - BIGGER = more space between rectangles
+    maxGap: 11,                    // Maximum gap between rectangles (pixels) - BIGGER = more variable spacing
+    gapRatio: 0.06,                // Gap as percentage of cell size (6% = moderate spacing) - BIGGER = larger gaps, SMALLER = tighter packing
     
     // ===== CANVAS DIMENSIONS =====
     canvasWidth: 800,              // Width of the artwork canvas
@@ -74,10 +74,10 @@ const Config = {
     seed: null,                    // null = random seed each time, or set a number for consistent results
     
     // ===== VISUAL APPEARANCE =====
-    strokeWeight: 2,               // Thickness of rectangle borders
-    cornerRadius: 8,               // How rounded the rectangle corners are
-    paperColor: [245, 240, 230],   // Background color (light beige)
-    gridColor: [80, 70, 60]        // Rectangle border color (dark brown)
+    strokeWeight: 2,               // Thickness of rectangle borders - BIGGER = thicker lines
+    cornerRadius: 8,               // How rounded the rectangle corners are - BIGGER = more rounded corners, 0 = sharp corners
+    paperColor: [245, 240, 230],   // Background color (light beige) - RGB values [red, green, blue]
+    gridColor: [80, 70, 60]        // Rectangle border color (dark brown) - RGB values [red, green, blue]
 };
 
 // ============================================================================

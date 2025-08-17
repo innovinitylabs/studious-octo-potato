@@ -49,33 +49,35 @@ class PRNG {
 // CONFIGURATION - All settings for the artwork generation
 // ============================================================================
 const Config = {
-    // ===== CANVAS DIMENSIONS =====
-    canvasWidth: 800,    // Width of the artwork canvas
-    canvasHeight: 1200,  // Height of the artwork canvas
-    
-    // ===== RANDOMNESS CONTROL =====
-    usePRNG: true,       // Use Pseudo-Random Number Generator for reproducible results
-    seed: null,          // null = random seed each time, or set a number for consistent results
+    // ===== COMPRESSION DENSITY SETTINGS (EASY TO EDIT) =====
+    compressionRadius: 400,        // How far the compression effect reaches (pixels)
+    compressionStrength: 50,       // How strong the compression is (multiplier)
+    compressionFalloff: 0.8,       // How quickly compression fades from center (smoothness)
+    horizontalDensityMultiplier: 8, // How many additional horizontal lines to add (was 4)
+    verticalDensityMultiplier: 12,  // How many additional vertical lines to add (was 4)
     
     // ===== GRID STRUCTURE =====
-    gridCols: 10,        // Number of columns in the base grid
-    gridRows: 10,        // Number of rows in the base grid
+    gridCols: 8,                   // Number of columns in the base grid
+    gridRows: 8,                   // Number of rows in the base grid
     
     // ===== SPACING BETWEEN RECTANGLES =====
-    minGap: 3,           // Minimum gap between rectangles (pixels)
-    maxGap: 8,           // Maximum gap between rectangles (pixels)
-    gapRatio: 0.06,      // Gap as percentage of cell size (6% = moderate spacing)
+    minGap: 8,                     // Minimum gap between rectangles (pixels)
+    maxGap: 11,                    // Maximum gap between rectangles (pixels)
+    gapRatio: 0.06,                // Gap as percentage of cell size (6% = moderate spacing)
+    
+    // ===== CANVAS DIMENSIONS =====
+    canvasWidth: 800,              // Width of the artwork canvas
+    canvasHeight: 1200,            // Height of the artwork canvas
+    
+    // ===== RANDOMNESS CONTROL =====
+    usePRNG: true,                 // Use Pseudo-Random Number Generator for reproducible results
+    seed: null,                    // null = random seed each time, or set a number for consistent results
     
     // ===== VISUAL APPEARANCE =====
-    strokeWeight: 2,     // Thickness of rectangle borders
-    cornerRadius: 8,     // How rounded the rectangle corners are
-    paperColor: [245, 240, 230],  // Background color (light beige)
-    gridColor: [80, 70, 60],      // Rectangle border color (dark brown)
-    
-    // ===== COMPRESSION EFFECT =====
-    compressionRadius: 400,    // How far the compression effect reaches (pixels)
-    compressionStrength: 5,    // How strong the compression is (multiplier)
-    compressionFalloff: 2    // How quickly compression fades from center (smoothness)
+    strokeWeight: 2,               // Thickness of rectangle borders
+    cornerRadius: 8,               // How rounded the rectangle corners are
+    paperColor: [245, 240, 230],   // Background color (light beige)
+    gridColor: [80, 70, 60]        // Rectangle border color (dark brown)
 };
 
 // ============================================================================
@@ -321,7 +323,7 @@ function applyCompressionDensity() {
         if (distance < Config.compressionRadius) {
             // Calculate how many additional lines to add based on distance from focal point
             const factor = getCompressionFactor(distance);
-            const additionalLinesCount = Math.floor(factor * 4); // 4x multiplier for density
+            const additionalLinesCount = Math.floor(factor * Config.horizontalDensityMultiplier);
             
             // Create evenly spaced additional lines within this cell
             for (let j = 1; j <= additionalLinesCount; j++) {
@@ -344,7 +346,7 @@ function applyCompressionDensity() {
         if (distance < Config.compressionRadius) {
             // Calculate how many additional lines to add based on distance from focal point
             const factor = getCompressionFactor(distance);
-            const additionalLinesCount = Math.floor(factor * 4); // 4x multiplier for density
+            const additionalLinesCount = Math.floor(factor * Config.verticalDensityMultiplier);
             
             // Create evenly spaced additional lines within this cell
             for (let k = 1; k <= additionalLinesCount; k++) {

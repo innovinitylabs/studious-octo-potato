@@ -50,16 +50,21 @@ const Config = {
     gridCols: 15,
     gridRows: 20,
     
+    // Dynamic gap settings
+    minGap: 2,
+    maxGap: 6,
+    gapRatio: 0.04, // 4% of cell size for tighter gaps
+    
     // Visual settings
     strokeWeight: 2,
-    cornerRadius: 11,
+    cornerRadius: 20,
     paperColor: [245, 240, 230],
     gridColor: [80, 70, 60],
     
     // Compression settings
-    compressionRadius: 250,
+    compressionRadius: 300,
     compressionStrength: 5,
-    compressionFalloff: 2.0
+    compressionFalloff: 1.5
 };
 
 // Global variables
@@ -124,39 +129,122 @@ function buildGrid() {
     gridX = [];
     gridY = [];
     
-    // Calculate base cell sizes with gutters
-    const gutterX = width * 0.05;
-    const gutterY = height * 0.05;
-    const baseCellWidth = (width - gutterX * (Config.gridCols + 1)) / Config.gridCols;
-    const baseCellHeight = (height - gutterY * (Config.gridRows + 1)) / Config.gridRows;
+    // Dynamic gap settings
+    const minGap = Config.minGap;
+    const maxGap = Config.maxGap;
     
+    // Calculate grid dimensions with proper centering
+    const edgeMargin = 20;
+    const gridWidth = width - (edgeMargin * 2);
+    const gridHeight = height - (edgeMargin * 2);
+    
+    // Calculate cell sizes with gaps
+    const totalGapsX = Config.gridCols + 1;
+    const totalGapsY = Config.gridRows + 1;
+    const totalGapSpaceX = totalGapsX * maxGap;
+    const totalGapSpaceY = totalGapsY * maxGap;
+    
+    const availableWidth = gridWidth - totalGapSpaceX;
+    const availableHeight = gridHeight - totalGapSpaceY;
+    const baseCellWidth = availableWidth / Config.gridCols;
+    const baseCellHeight = availableHeight / Config.gridRows;
+    
+    console.log("Grid dimensions:", gridWidth, "x", gridHeight);
     console.log("Base cell size:", baseCellWidth, "x", baseCellHeight);
-    console.log("Gutters:", gutterX, "x", gutterY);
+    console.log("Dynamic gaps:", minGap, "to", maxGap, "pixels");
     
-    // Build horizontal grid lines with density variation
-    for (let i = 0; i <= Config.gridCols; i++) {
-        let x = gutterX + i * (baseCellWidth + gutterX);
+    // Build horizontal grid lines with dynamic gaps - START FROM CENTER
+    const centerX = width / 2;
+    const halfCols = Math.floor(Config.gridCols / 2);
+    
+    // Start from center and build outward
+    let currentX = centerX;
+    gridX.push(currentX); // Center line
+    
+    // Build right side
+    for (let i = 1; i <= halfCols; i++) {
+        const dynamicGap = Config.usePRNG ? 
+            prng.random(minGap, maxGap) : 
+            random(minGap, maxGap);
+        currentX += dynamicGap + baseCellWidth;
         
-        // Add subtle random jitter if PRNG is enabled
+        // Add subtle random jitter
+        let x = currentX;
         if (Config.usePRNG && prng) {
-            const jitter = prng.random(-baseCellWidth * 0.1, baseCellWidth * 0.1);
+            const jitter = prng.random(-baseCellWidth * 0.05, baseCellWidth * 0.05);
             x += jitter;
         }
         
+        // Ensure we don't exceed right boundary
+        x = constrain(x, centerX, width - edgeMargin);
         gridX.push(x);
     }
     
-    // Build vertical grid lines with density variation
-    for (let j = 0; j <= Config.gridRows; j++) {
-        let y = gutterY + j * (baseCellHeight + gutterY);
+    // Build left side
+    currentX = centerX;
+    for (let i = 1; i <= halfCols; i++) {
+        const dynamicGap = Config.usePRNG ? 
+            prng.random(minGap, maxGap) : 
+            random(minGap, maxGap);
+        currentX -= (dynamicGap + baseCellWidth);
         
-        // Add subtle random jitter if PRNG is enabled
+        // Add subtle random jitter
+        let x = currentX;
         if (Config.usePRNG && prng) {
-            const jitter = prng.random(-baseCellHeight * 0.1, baseCellHeight * 0.1);
+            const jitter = prng.random(-baseCellWidth * 0.05, baseCellWidth * 0.05);
+            x += jitter;
+        }
+        
+        // Ensure we don't exceed left boundary
+        x = constrain(x, edgeMargin, centerX);
+        gridX.unshift(x); // Add to beginning
+    }
+    
+    // Build vertical grid lines with dynamic gaps - START FROM CENTER
+    const centerY = height / 2;
+    const halfRows = Math.floor(Config.gridRows / 2);
+    
+    // Start from center and build outward
+    let currentY = centerY;
+    gridY.push(currentY); // Center line
+    
+    // Build bottom side
+    for (let j = 1; j <= halfRows; j++) {
+        const dynamicGap = Config.usePRNG ? 
+            prng.random(minGap, maxGap) : 
+            random(minGap, maxGap);
+        currentY += dynamicGap + baseCellHeight;
+        
+        // Add subtle random jitter
+        let y = currentY;
+        if (Config.usePRNG && prng) {
+            const jitter = prng.random(-baseCellHeight * 0.05, baseCellHeight * 0.05);
             y += jitter;
         }
         
+        // Ensure we don't exceed bottom boundary
+        y = constrain(y, centerY, height - edgeMargin);
         gridY.push(y);
+    }
+    
+    // Build top side
+    currentY = centerY;
+    for (let j = 1; j <= halfRows; j++) {
+        const dynamicGap = Config.usePRNG ? 
+            prng.random(minGap, maxGap) : 
+            random(minGap, maxGap);
+        currentY -= (dynamicGap + baseCellHeight);
+        
+        // Add subtle random jitter
+        let y = currentY;
+        if (Config.usePRNG && prng) {
+            const jitter = prng.random(-baseCellHeight * 0.05, baseCellHeight * 0.05);
+            y += jitter;
+        }
+        
+        // Ensure we don't exceed top boundary
+        y = constrain(y, edgeMargin, centerY);
+        gridY.unshift(y); // Add to beginning
     }
     
     // Apply compression to create more density in compression area
@@ -166,6 +254,8 @@ function buildGrid() {
     
     console.log("Grid X positions:", gridX.length);
     console.log("Grid Y positions:", gridY.length);
+    console.log("First X:", gridX[0], "Last X:", gridX[gridX.length - 1]);
+    console.log("First Y:", gridY[0], "Last Y:", gridY[gridY.length - 1]);
     console.log("=== GRID BUILT ===");
 }
 
@@ -175,8 +265,8 @@ function applyCompressionDensity() {
     // Create additional grid lines in compression area
     const additionalLines = [];
     
-    // Add horizontal lines in compression area
-    for (let i = 0; i < gridX.length - 1; i++) {
+    // Add horizontal lines in compression area (skip edge lines)
+    for (let i = 2; i < gridX.length - 3; i++) {
         const x1 = gridX[i];
         const x2 = gridX[i + 1];
         const midX = (x1 + x2) / 2;
@@ -185,7 +275,7 @@ function applyCompressionDensity() {
         const distance = dist(midX, focalPoint.y, focalPoint.x, focalPoint.y);
         if (distance < Config.compressionRadius) {
             const factor = getCompressionFactor(distance);
-            const additionalLinesCount = Math.floor(factor * 3); // 0-3 additional lines
+            const additionalLinesCount = Math.floor(factor * 6); // Reduced to 6 for moderate density
             
             for (let j = 1; j <= additionalLinesCount; j++) {
                 const t = j / (additionalLinesCount + 1);
@@ -195,8 +285,8 @@ function applyCompressionDensity() {
         }
     }
     
-    // Add vertical lines in compression area
-    for (let j = 0; j < gridY.length - 1; j++) {
+    // Add vertical lines in compression area (skip edge lines)
+    for (let j = 2; j < gridY.length - 3; j++) {
         const y1 = gridY[j];
         const y2 = gridY[j + 1];
         const midY = (y1 + y2) / 2;
@@ -205,7 +295,7 @@ function applyCompressionDensity() {
         const distance = dist(focalPoint.x, midY, focalPoint.x, focalPoint.y);
         if (distance < Config.compressionRadius) {
             const factor = getCompressionFactor(distance);
-            const additionalLinesCount = Math.floor(factor * 3); // 0-3 additional lines
+            const additionalLinesCount = Math.floor(factor * 6); // Reduced to 6 for moderate density
             
             for (let k = 1; k <= additionalLinesCount; k++) {
                 const t = k / (additionalLinesCount + 1);
@@ -237,25 +327,40 @@ function applyCompressionDensity() {
 function applyCompressionToGrid() {
     console.log("=== APPLYING COMPRESSION TO GRID ===");
     
-    // Compress horizontal lines
-    for (let i = 0; i < gridX.length; i++) {
+    // Define grid boundaries
+    const gridStartX = 20;
+    const gridStartY = 20;
+    const gridEndX = width - 20;
+    const gridEndY = height - 20;
+    
+    // Compress horizontal lines (skip edge lines)
+    for (let i = 2; i < gridX.length - 2; i++) {
         const distance = dist(gridX[i], focalPoint.y, focalPoint.x, focalPoint.y);
         if (distance < Config.compressionRadius) {
             const factor = getCompressionFactor(distance);
             // Move line toward focal point (compression)
-            gridX[i] = lerp(gridX[i], focalPoint.x, factor);
+            const newX = lerp(gridX[i], focalPoint.x, factor);
+            // Ensure we don't move lines outside grid boundaries
+            const constrainedX = constrain(newX, gridStartX, gridEndX);
+            gridX[i] = constrainedX;
         }
     }
     
-    // Compress vertical lines
-    for (let j = 0; j < gridY.length; j++) {
+    // Compress vertical lines (skip edge lines)
+    for (let j = 2; j < gridY.length - 2; j++) {
         const distance = dist(focalPoint.x, gridY[j], focalPoint.x, focalPoint.y);
         if (distance < Config.compressionRadius) {
             const factor = getCompressionFactor(distance);
             // Move line toward focal point (compression)
-            gridY[j] = lerp(gridY[j], focalPoint.y, factor);
+            const newY = lerp(gridY[j], focalPoint.y, factor);
+            // Ensure we don't move lines outside grid boundaries
+            const constrainedY = constrain(newY, gridStartY, gridEndY);
+            gridY[j] = constrainedY;
         }
     }
+    
+    console.log("Compression applied - focal point:", focalPoint.x, focalPoint.y, "radius:", Config.compressionRadius);
+    console.log("Grid boundaries:", gridStartX, gridStartY, "to", gridEndX, gridEndY);
 }
 
 function getCompressionFactor(distance) {
@@ -264,8 +369,8 @@ function getCompressionFactor(distance) {
     
     // Create smooth falloff from center - maximum compression at center
     const falloff = pow(1.0 - normalizedDistance, Config.compressionFalloff);
-    // Scale the factor to create more dramatic compression
-    return falloff * 0.8; // 0.8 = 80% compression at center
+    // Scale the factor to create moderate compression
+    return falloff * 0.4; // 0.4 = 40% compression at center (reduced from 0.9)
 }
 
 function renderPaperBackground() {
@@ -288,7 +393,10 @@ function renderGrid() {
     strokeWeight(Config.strokeWeight);
     noFill();
     
-    // Draw each cell in the grid
+    console.log("=== RENDERING RECTANGLES WITH GAPS ===");
+    let rectangleCount = 0;
+    
+    // Draw each cell in the grid as a complete rectangle with bezier curves and gaps
     for (let i = 0; i < gridX.length - 1; i++) {
         for (let j = 0; j < gridY.length - 1; j++) {
             const x = gridX[i];
@@ -298,45 +406,70 @@ function renderGrid() {
             
             // Only draw if cell has positive dimensions
             if (w > 0 && h > 0) {
-                drawCurvedCell(x, y, w, h);
+                // Calculate adaptive gaps based on cell size
+                const gapX = Math.max(Config.minGap, Math.min(Config.maxGap, w * Config.gapRatio));
+                const gapY = Math.max(Config.minGap, Math.min(Config.maxGap, h * Config.gapRatio));
+                
+                // Add small random variation to gaps for organic feel
+                const randomVariation = 0.2; // 20% variation
+                const finalGapX = gapX + (Config.usePRNG ? 
+                    prng.random(-gapX * randomVariation, gapX * randomVariation) : 
+                    random(-gapX * randomVariation, gapX * randomVariation));
+                const finalGapY = gapY + (Config.usePRNG ? 
+                    prng.random(-gapY * randomVariation, gapY * randomVariation) : 
+                    random(-gapY * randomVariation, gapY * randomVariation));
+                
+                const rectX = x + finalGapX * 0.5;
+                const rectY = y + finalGapY * 0.5;
+                const rectW = w - finalGapX;
+                const rectH = h - finalGapY;
+                
+                // Only draw if rectangle still has positive dimensions after gaps
+                if (rectW > 2 && rectH > 2) { // Minimum 2px to be visible
+                    drawCurvedRectangle(rectX, rectY, rectW, rectH);
+                    rectangleCount++;
+                }
             }
         }
     }
+    
+    console.log("Drew", rectangleCount, "curved rectangles with adaptive gaps");
+    console.log("Gap ratio:", Config.gapRatio, "Min/Max gaps:", Config.minGap, "/", Config.maxGap);
 }
 
-function drawCurvedCell(x, y, w, h) {
+function drawCurvedRectangle(x, y, w, h) {
     // Calculate corner radius (smaller than the cell size)
     const radius = min(Config.cornerRadius, min(w, h) * 0.3);
     
-    // Draw the cell with curved corners using bezier curves
+    // Draw the rectangle with proper bezier-curved corners
     beginShape();
     
     // Top edge
     vertex(x + radius, y);
     vertex(x + w - radius, y);
     
-    // Top-right corner
+    // Top-right corner (bezier curve)
     bezierVertex(x + w, y, x + w, y, x + w, y + radius);
     
     // Right edge
     vertex(x + w, y + radius);
     vertex(x + w, y + h - radius);
     
-    // Bottom-right corner
+    // Bottom-right corner (bezier curve)
     bezierVertex(x + w, y + h, x + w, y + h, x + w - radius, y + h);
     
     // Bottom edge
     vertex(x + w - radius, y + h);
     vertex(x + radius, y + h);
     
-    // Bottom-left corner
+    // Bottom-left corner (bezier curve)
     bezierVertex(x, y + h, x, y + h, x, y + h - radius);
     
     // Left edge
     vertex(x, y + h - radius);
     vertex(x, y + radius);
     
-    // Top-left corner
+    // Top-left corner (bezier curve)
     bezierVertex(x, y, x, y, x + radius, y);
     
     endShape(CLOSE);
